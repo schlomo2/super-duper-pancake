@@ -16,8 +16,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             NQueensAppTheme {
                 NQueensScreen(
-                    size = 8,
-                    onBack = {}
+                    size = 8
                 )
             }
         }

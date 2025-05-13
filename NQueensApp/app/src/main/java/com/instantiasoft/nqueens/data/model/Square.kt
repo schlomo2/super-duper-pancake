@@ -1,4 +1,4 @@
-package com.instantiasoft.nqueens.model
+package com.instantiasoft.nqueens.data.model
 
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.IntSize
@@ -8,11 +8,14 @@ data class Square(
     val col: Int,
     val light: Boolean,
     val piece: Piece? = null,
-    val moves: List<Move> = emptyList(),
     val active: Boolean = false,
     val position: Offset = Offset(0f,0f),
     val size: IntSize = IntSize(0, 0)
 ) {
+    fun sameBoardPosition(square: Square?): Boolean {
+        return row == square?.row && col == square.col
+    }
+
     companion object {
         fun isLight(row: Int, col: Int, startsWithLight: Boolean = true): Boolean {
             var light = startsWithLight

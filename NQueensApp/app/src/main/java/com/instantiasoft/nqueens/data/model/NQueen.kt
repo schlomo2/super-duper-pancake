@@ -1,12 +1,15 @@
-package com.instantiasoft.nqueens.model
+package com.instantiasoft.nqueens.data.model
 
 data class NQueen(
     val x: Float = 0f,
     val y: Float = 0f,
+    override val index: Int,
+    override val square: Square? = null,
+    override val moves: List<Square> = emptyList(),
     override val light: Boolean = false,
     override val moved: Boolean = false
-): Piece(PieceType.NQueen, true) {
-    override fun move(from: Square, to: Square, board: Board): MoveResult? {
+): Piece(PieceType.NQueen, index = index, light = true) {
+    override fun move(from: Square, to: Square, board: ChessBoard): MoveResult? {
         straight(from, to, board)?.let {
             return it
         }

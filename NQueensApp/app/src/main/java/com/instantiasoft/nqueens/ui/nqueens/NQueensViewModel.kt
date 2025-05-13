@@ -4,19 +4,28 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.positionInWindow
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.instantiasoft.nqueens.data.model.Collision
+import com.instantiasoft.nqueens.data.model.Move
+import com.instantiasoft.nqueens.data.model.MoveDirection
 import com.instantiasoft.nqueens.extensions.distance
-import com.instantiasoft.nqueens.model.NQueen
-import com.instantiasoft.nqueens.model.Projectile
-import com.instantiasoft.nqueens.model.ProjectileColor
-import com.instantiasoft.nqueens.model.ProjectileType
-import com.instantiasoft.nqueens.model.Square
+import com.instantiasoft.nqueens.data.model.NQueen
+import com.instantiasoft.nqueens.data.model.NQueensBoard
+import com.instantiasoft.nqueens.data.model.Projectile
+import com.instantiasoft.nqueens.data.model.ProjectileColor
+import com.instantiasoft.nqueens.data.model.ProjectileType
+import com.instantiasoft.nqueens.data.model.Square
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedFactory
 import dagger.assisted.AssistedInject
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import kotlin.math.acos
 import kotlin.math.cos
 import kotlin.math.sin
@@ -43,18 +52,28 @@ class NQueensViewModel @AssistedInject constructor(
         val setupSize: Int = 0,
         val size: Int = 0,
         val queens: List<NQueen> = emptyList(),
-        val board: Array<Array<Square>> = emptyArray(),
+        val board: NQueensBoard = NQueensBoard(),
+        val paths: Array<Array<List<Move>>> = emptyArray(),
+        val collisionMap: Map<Collision, List<MoveDirection>> = emptyMap(),
         val queenUpdateMap: Map<Int, OffsetState> = emptyMap(),
         val projectileUpdateList: List<Projectile> = emptyList(),
         val squareSize: Int = 0,
         val squareSizeDp: Int = 0,
         val dragOrigin: Offset = Offset(0f, 0f),
         val overSquare: Square? = null,
+        val moveQueenIndex: Int? = null,
+        val dragIndex: Int? = null,
+        val calculatePaths: Boolean = false,
+        val availableQueens: Int = 0,
+        val showMoves: Boolean = true,
+        val complete: Boolean = false,
         val onDragOriginPositioned: (LayoutCoordinates) -> Unit,
         val onDrag: (index: Int, offset: Offset) -> Unit,
         val onDragEnd: (index: Int) -> Unit,
         val onSquarePositioned: (Square, LayoutCoordinates) -> Unit,
-        val onAddFirework: (Offset) -> Unit
+        val onAddFirework: (Offset) -> Unit,
+        val onUpdateSize: (Int) -> Unit,
+        val onUpdateShowMoves: (Boolean) -> Unit
     ) {
         val needsSetup: Boolean get() = setupSize != size
     }
@@ -65,23 +84,15 @@ class NQueensViewModel @AssistedInject constructor(
             onDrag = ::onDrag,
             onDragEnd = ::onDragEnd,
             onSquarePositioned = ::onSquarePositioned,
-            onAddFirework = ::onAddFireWork
+            onAddFirework = ::onAddFirework,
+            onUpdateSize = ::onUpdateSize,
+            onUpdateShowMoves = ::onUpdateShowMoves
         )
     )
     val boardState = _boardState.asStateFlow()
 
     init {
-        _boardState.update {
-            it.copy(
-                size = size,
-                queens = List(size) { NQueen() },
-                board = Array(size) { row ->
-                    Array(size) { col ->
-                        Square(row = row, col = col, light = Square.isLight(row, col))
-                    }
-                }
-            )
-        }
+        onUpdateSize(size)
     }
 
     fun setup(widthDp: Int, heightDp: Int) {
@@ -117,15 +128,14 @@ class NQueensViewModel @AssistedInject constructor(
 
         if (square.position == position && square.size == size) return
 
-        val board = boardState.value.board.copyOf()
-        board[square.row][square.col] = square.copy(
+        val updatedSquare = square.copy(
             position = position,
             size = size
         )
 
         _boardState.update {
             it.copy(
-                board = board,
+                board = boardState.value.board.updateSquare(updatedSquare),
                 squareSize = layout.size.width
             )
         }
@@ -137,7 +147,7 @@ class NQueensViewModel @AssistedInject constructor(
 
         val overSquare = boardState.value.overSquare
         val src = Offset(queen.x, queen.y)
-        val dst = overSquare?.takeIf { it.piece == null }?.let {
+        val dst = overSquare?.takeIf { it.piece?.index == queen.index }?.let {
             it.position - boardState.value.dragOrigin
         } ?: Offset(0f, 0f)
 
@@ -152,28 +162,8 @@ class NQueensViewModel @AssistedInject constructor(
                         millis = System.currentTimeMillis()
                     )
                 },
-                overSquare = null,
-                board = overSquare?.let { square ->
-                    state.board.copyOf().apply {
-                        this[overSquare.row][overSquare.col] = square.copy(
-                            piece = queen
-                        )
-                    }
-                } ?: state.board,
-                projectileUpdateList = state.projectileUpdateList.toMutableList().apply {
-                    repeat(5) {
-                        this.add(
-                            Projectile(
-                                type = ProjectileType.Rocket,
-                                offset = Offset.Zero,
-                                color = ProjectileColor.get(Random.nextDouble()),
-                                duration = (Random.nextDouble().toFloat() * 500 + 1500).toLong(),
-                                velocityX = Random.nextDouble().toFloat() * 800f - 400f,
-                                velocityY = Random.nextDouble().toFloat() * 1300f + 1800f,
-                            )
-                        )
-                    }
-                }
+                moveQueenIndex = index,
+                dragIndex = null
             )
         }
     }
@@ -188,38 +178,434 @@ class NQueensViewModel @AssistedInject constructor(
             )
         } ?: return
 
+        _boardState.update {
+            it.copy(
+                queens = it.queens.toMutableList().apply {
+                    this[index] = queen
+                },
+                moveQueenIndex = index,
+                dragIndex = index
+            )
+        }
+    }
+
+    fun moveQueen(index: Int) {
+        val queen = boardState.value.queens.getOrNull(index) ?: return
+
+        val state = boardState.value
         val board = state.board
 
         // used the center of the dragged item to determine which square is covered
         val dragPosX = state.dragOrigin.x + state.squareSize/2 + queen.x
         val dragPosY = state.dragOrigin.y + state.squareSize/2 + queen.y
 
-        var overSquare: Square? = null
+        val updateSquares = mutableListOf<Square>()
 
-        run testOverSquare@{
-            board.forEach { row ->
-                row.forEach { square ->
-                    if (square.position.x < dragPosX && square.position.y < dragPosY) {
-                        if (dragPosX < square.position.x + square.size.width && dragPosY < square.position.y + square.size.height) {
-                            overSquare = square
-                            return@testOverSquare
-                        }
-                    }
-                }
-            }
+        val overSquare = board.overSquare(dragPosX, dragPosY)
+
+        state.overSquare?.takeIf { !it.sameBoardPosition(overSquare) && it.piece?.index == queen.index }?.let {
+            updateSquares.add(it.copy(piece = null))
         }
 
-        _boardState.update {
-            it.copy(
-                overSquare = overSquare,
-                queens = it.queens.toMutableList().apply {
-                    this[index] = queen
-                }
+        _boardState.update { updateState ->
+            updateState.copy(
+                overSquare = overSquare?.takeIf { updateState.dragIndex != null }?.let {
+                    if (it.piece == null) {
+                        val updated = it.copy(piece = queen)
+                        updateSquares.add(updated)
+                        updated
+                    } else {
+                        it
+                    }
+                },
+                queens = updateState.queens.toMutableList().apply {
+                    this[queen.index] = if (overSquare?.piece == null) {
+                        queen.copy(square = overSquare)
+                    } else if (overSquare.piece.index != queen.index) {
+                        queen.copy(square = null)
+                    } else {
+                        queen
+                    }
+                },
+                moveQueenIndex = null,
+                board = if (updateSquares.size > 0) board.updateSquares(updateSquares) else updateState.board,
+                calculatePaths = true
             )
         }
     }
 
+    fun calculatePaths() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val state = boardState.value
+
+            val board = state.board
+            val paths: Array<Array<List<Move>>> = Array(state.size) {
+                Array(state.size) {
+                    emptyList()
+                }
+            }
+            val collisions = mutableMapOf<Collision, List<MoveDirection>>()
+
+            state.queens.forEach { queen ->
+                val square = queen.square ?: return@forEach
+
+                checkWest(board, paths, square, collisions)
+                checkEast(board, paths, square, collisions)
+                checkNorth(board, paths, square, collisions)
+                checkSouth(board, paths, square, collisions)
+                checkNorthWest(board, paths, square, collisions)
+                checkNorthEast(board, paths, square, collisions)
+                checkSouthEast(board, paths, square, collisions)
+                checkSouthWest(board, paths, square, collisions)
+            }
+
+            val availableQueens = state.queens.filter {
+                it.index != state.dragIndex && it.square == null
+            }.size
+
+            val complete = !state.complete && collisions.isEmpty() && availableQueens == 0 && state.dragIndex == null
+
+            _boardState.update { updateState ->
+                updateState.copy(
+                    paths = paths,
+                    collisionMap = collisions,
+                    calculatePaths = false,
+                    availableQueens = availableQueens,
+                    complete = updateState.complete || complete
+                )
+            }
+
+            if (complete) {
+                onAddRockets(10)
+            }
+        }
+    }
+
+    fun checkWest(
+        board: NQueensBoard,
+        paths: Array<Array<List<Move>>>,
+        square: Square,
+        collisionMap: MutableMap<Collision, List<MoveDirection>>
+    ) {
+        val row = square.row
+        var col = square.col - 1
+
+        // horizontal -> left
+        var collision = false
+        while (col >= 0) {
+            if (board.hasPiece(row, col)) {
+                collision = true
+                break
+            }
+
+            col--
+        }
+
+        col++
+
+        // add the rows now that the collision is determined
+        while (col <= square.col) {
+            if (col == square.col) {
+                if (collision) {
+                    Collision(row, col).apply {
+                        collisionMap[this] =
+                            (collisionMap[this] ?: emptyList()).plus(MoveDirection.West)
+                    }
+                }
+            } else {
+                paths[row][col] =
+                    paths[row][col].plus(Move(MoveDirection.West, collision = collision))
+            }
+            col++
+        }
+    }
+
+    fun checkEast(
+        board: NQueensBoard,
+        paths: Array<Array<List<Move>>>,
+        square: Square,
+        collisionMap: MutableMap<Collision, List<MoveDirection>>
+    ) {
+        val row = square.row
+        var col = square.col + 1
+
+        // horizontal -> right
+        var collision = false
+        while (col < board.size) {
+            if (board.hasPiece(row, col)) {
+                collision = true
+                break
+            }
+
+            col++
+        }
+
+        col--
+
+        // add the rows now that the collision is determined
+        while (col >= square.col) {
+            if (col == square.col) {
+                if (collision) {
+                    Collision(row, col).apply {
+                        collisionMap[this] =
+                            (collisionMap[this] ?: emptyList()).plus(MoveDirection.East)
+                    }
+                }
+            } else {
+                paths[row][col] = paths[row][col].plus(Move(MoveDirection.East, collision))
+            }
+            col--
+        }
+    }
+
+    fun checkNorth(
+        board: NQueensBoard,
+        paths: Array<Array<List<Move>>>,
+        square: Square,
+        collisionMap: MutableMap<Collision, List<MoveDirection>>
+    ) {
+        var row = square.row - 1
+        val col = square.col
+
+        // horizontal -> right
+        var collision = false
+        while (row >= 0) {
+            if (board.hasPiece(row, col)) {
+                collision = true
+                break
+            }
+
+            row--
+        }
+
+        row++
+
+        // add the rows now that the collision is determined
+        while (row <= square.row) {
+            if (row == square.row) {
+                if (collision) {
+                    Collision(row, col).apply {
+                        collisionMap[this] =
+                            (collisionMap[this] ?: emptyList()).plus(MoveDirection.North)
+                    }
+                }
+            } else {
+                paths[row][col] = paths[row][col].plus(Move(MoveDirection.North, collision))
+            }
+            row++
+        }
+    }
+
+    fun checkSouth(
+        board: NQueensBoard,
+        paths: Array<Array<List<Move>>>,
+        square: Square,
+        collisionMap: MutableMap<Collision, List<MoveDirection>>
+    ) {
+        var row = square.row + 1
+        val col = square.col
+
+        // horizontal -> right
+        var collision = false
+        while (row < board.size) {
+            if (board.hasPiece(row, col)) {
+                collision = true
+                break
+            }
+
+            row++
+        }
+
+        row--
+
+        // add the rows now that the collision is determined
+        while (row >= square.row) {
+            if (row == square.row) {
+                if (collision) {
+                    Collision(row, col).apply {
+                        collisionMap[this] =
+                            (collisionMap[this] ?: emptyList()).plus(MoveDirection.South)
+                    }
+                }
+            } else {
+                paths[row][col] = paths[row][col].plus(Move(MoveDirection.South, collision))
+            }
+            row--
+        }
+    }
+
+    fun checkNorthWest(
+        board: NQueensBoard,
+        paths: Array<Array<List<Move>>>,
+        square: Square,
+        collisionMap: MutableMap<Collision, List<MoveDirection>>
+    ) {
+        var row = square.row - 1
+        var col = square.col - 1
+
+        // horizontal -> right
+        var collision = false
+        while (row >= 0 && col >= 0) {
+            if (board.hasPiece(row, col)) {
+                collision = true
+                break
+            }
+
+            row--
+            col--
+        }
+
+        row++
+        col++
+
+        // add the rows now that the collision is determined
+        while (row <= square.row) {
+            if (row == square.row) {
+                if (collision) {
+                    Collision(row, col).apply {
+                        collisionMap[this] =
+                            (collisionMap[this] ?: emptyList()).plus(MoveDirection.NorthWest)
+                    }
+                }
+            } else {
+                paths[row][col] = paths[row][col].plus(Move(MoveDirection.NorthWest, collision))
+            }
+            row++
+            col++
+        }
+    }
+
+    fun checkNorthEast(
+        board: NQueensBoard,
+        paths: Array<Array<List<Move>>>,
+        square: Square,
+        collisionMap: MutableMap<Collision, List<MoveDirection>>
+    ) {
+        var row = square.row - 1
+        var col = square.col + 1
+
+        // horizontal -> right
+        var collision = false
+        while (row >= 0 && col < board.size) {
+            if (board.hasPiece(row, col)) {
+                collision = true
+                break
+            }
+
+            row--
+            col++
+        }
+
+        row++
+        col--
+
+        // add the rows now that the collision is determined
+        while (row <= square.row) {
+            if (row == square.row) {
+                if (collision) {
+                    Collision(row, col).apply {
+                        collisionMap[this] =
+                            (collisionMap[this] ?: emptyList()).plus(MoveDirection.NorthEast)
+                    }
+                }
+            } else {
+                paths[row][col] = paths[row][col].plus(Move(MoveDirection.NorthEast, collision))
+            }
+            row++
+            col--
+        }
+    }
+
+    fun checkSouthEast(
+        board: NQueensBoard,
+        paths: Array<Array<List<Move>>>,
+        square: Square,
+        collisionMap: MutableMap<Collision, List<MoveDirection>>
+    ) {
+        var row = square.row + 1
+        var col = square.col + 1
+
+        // horizontal -> right
+        var collision = false
+        while (row < board.size && col < board.size) {
+            if (board.hasPiece(row, col)) {
+                collision = true
+                break
+            }
+
+            row++
+            col++
+        }
+
+        row--
+        col--
+
+        // add the rows now that the collision is determined
+        while (row >= square.row) {
+            if (row == square.row) {
+                if (collision) {
+                    Collision(row, col).apply {
+                        collisionMap[this] =
+                            (collisionMap[this] ?: emptyList()).plus(MoveDirection.SouthEast)
+                    }
+                }
+            } else {
+                paths[row][col] = paths[row][col].plus(Move(MoveDirection.SouthEast, collision))
+            }
+            row--
+            col--
+        }
+    }
+
+    fun checkSouthWest(
+        board: NQueensBoard,
+        paths: Array<Array<List<Move>>>,
+        square: Square,
+        collisionMap: MutableMap<Collision, List<MoveDirection>>
+    ) {
+        var row = square.row + 1
+        var col = square.col - 1
+
+        // horizontal -> right
+        var collision = false
+        while (row < board.size && col >= 0) {
+            if (board.hasPiece(row, col)) {
+                collision = true
+                break
+            }
+
+            row++
+            col--
+        }
+
+        row--
+        col++
+
+        // add the rows now that the collision is determined
+        while (row >= square.row) {
+            if (row == square.row) {
+                if (collision) {
+                    Collision(row, col).apply {
+                        collisionMap[this] =
+                            (collisionMap[this] ?: emptyList()).plus(MoveDirection.SouthWest)
+                    }
+                }
+            } else {
+                paths[row][col] = paths[row][col].plus(Move(MoveDirection.SouthWest, collision))
+            }
+            row--
+            col++
+        }
+    }
+
     fun updateAnimations() {
+        if (boardState.value.calculatePaths)
+            calculatePaths()
+
+        boardState.value.moveQueenIndex?.let {
+            moveQueen(it)
+        }
+
         updateQueens()
         updateProjectiles()
     }
@@ -283,7 +669,7 @@ class NQueensViewModel @AssistedInject constructor(
 
             if (projectile.elapsed + elapsedMillis > projectile.duration + projectile.fadeDuration) {
                 if (projectile.type == ProjectileType.Rocket) {
-                    projectiles.addAll(addFireWorks(projectile.offset, projectile.color))
+                    projectiles.addAll(addFireworks(projectile.offset, projectile.color))
                 }
                 iterator.remove()
             } else {
@@ -309,15 +695,21 @@ class NQueensViewModel @AssistedInject constructor(
         }
     }
 
-    fun onAddFireWork(offset: Offset, projectileCount: Int = 50) {
+    fun onAddFirework(offset: Offset, projectileCount: Int = 50) {
         _boardState.update {
             it.copy(
-                projectileUpdateList = it.projectileUpdateList.plus(addFireWorks(offset, null, projectileCount))
+                projectileUpdateList = it.projectileUpdateList.plus(
+                    addFireworks(
+                        offset,
+                        null,
+                        projectileCount
+                    )
+                )
             )
         }
     }
 
-    fun addFireWorks(
+    fun addFireworks(
         offset: Offset,
         color: ProjectileColor? = null,
         projectileCount: Int = 50
@@ -348,6 +740,60 @@ class NQueensViewModel @AssistedInject constructor(
         }
 
         return projectiles
+    }
+
+    fun onAddRockets(count: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repeat(count) {
+                _boardState.update { state ->
+                    state.copy(
+                        projectileUpdateList = state.projectileUpdateList.toMutableList().apply {
+                            this.add(
+                                Projectile(
+                                    type = ProjectileType.Rocket,
+                                    offset = Offset.Zero,
+                                    color = ProjectileColor.get(Random.nextDouble()),
+                                    duration = (Random.nextDouble().toFloat() * 500 + 1500).toLong(),
+                                    velocityX = Random.nextDouble().toFloat() * 800f - 400f,
+                                    velocityY = Random.nextDouble().toFloat() * 1300f + 1800f,
+                                )
+                            )
+                        }
+                    )
+                }
+
+                delay((Random.nextDouble() * 200).toLong() + 200)
+            }
+        }
+    }
+
+    fun onUpdateSize(size: Int) {
+        _boardState.update {
+            it.copy(
+                size = size,
+                queens = List(size) { NQueen(index = it) },
+                availableQueens = size,
+                board = NQueensBoard(Array(size) { row ->
+                    Array(size) { col ->
+                        Square(row = row, col = col, light = Square.isLight(row, col))
+                    }
+                }),
+                paths = Array(size) {
+                    Array(size) {
+                        emptyList()
+                    }
+                },
+                collisionMap = emptyMap()
+            )
+        }
+    }
+
+    fun onUpdateShowMoves(show: Boolean) {
+        _boardState.update {
+            it.copy(
+                showMoves = show
+            )
+        }
     }
 
     companion object {

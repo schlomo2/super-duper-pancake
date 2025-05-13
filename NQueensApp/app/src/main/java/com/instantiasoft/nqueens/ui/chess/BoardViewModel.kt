@@ -1,16 +1,16 @@
 package com.instantiasoft.nqueens.ui.chess
 
 import androidx.lifecycle.ViewModel
-import com.instantiasoft.nqueens.model.Bishop
-import com.instantiasoft.nqueens.model.Board
-import com.instantiasoft.nqueens.model.King
-import com.instantiasoft.nqueens.model.Knight
-import com.instantiasoft.nqueens.model.MoveType
-import com.instantiasoft.nqueens.model.Pawn
-import com.instantiasoft.nqueens.model.PieceType
-import com.instantiasoft.nqueens.model.Queen
-import com.instantiasoft.nqueens.model.Rook
-import com.instantiasoft.nqueens.model.Square
+import com.instantiasoft.nqueens.data.model.Bishop
+import com.instantiasoft.nqueens.data.model.ChessBoard
+import com.instantiasoft.nqueens.data.model.King
+import com.instantiasoft.nqueens.data.model.Knight
+import com.instantiasoft.nqueens.data.model.MoveType
+import com.instantiasoft.nqueens.data.model.Pawn
+import com.instantiasoft.nqueens.data.model.PieceType
+import com.instantiasoft.nqueens.data.model.Queen
+import com.instantiasoft.nqueens.data.model.Rook
+import com.instantiasoft.nqueens.data.model.Square
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedFactory
 import dagger.assisted.AssistedInject
@@ -29,12 +29,12 @@ class BoardViewModel @AssistedInject constructor(
         fun create(size: Int): BoardViewModel
     }
 
-    private val _boardState = MutableStateFlow(
-        Board(
+    private val _Chess_boardState = MutableStateFlow(
+        ChessBoard(
             onClick = ::onClick
         )
     )
-    val boardState = _boardState.asStateFlow()
+    val boardState = _Chess_boardState.asStateFlow()
 
     init {
         setupBoard()
@@ -60,7 +60,7 @@ class BoardViewModel @AssistedInject constructor(
             rows
         }
 
-        _boardState.update {
+        _Chess_boardState.update {
             it.copy(
                 size = size,
                 rows = rows
@@ -75,8 +75,8 @@ class BoardViewModel @AssistedInject constructor(
     }
 
     fun addPawnsToRow(rowIndex: Int, light: Boolean) {
-        val size = _boardState.value.size
-        val row = _boardState.value.rows.getOrNull(rowIndex)?.toMutableList() ?: return
+        val size = _Chess_boardState.value.size
+        val row = _Chess_boardState.value.rows.getOrNull(rowIndex)?.toMutableList() ?: return
 
         repeat(size) {
             row[it] = row[it].copy(
@@ -86,7 +86,7 @@ class BoardViewModel @AssistedInject constructor(
             )
         }
 
-        _boardState.update {
+        _Chess_boardState.update {
             it.copy(
                 rows = it.rows.toMutableList().apply {
                     this[rowIndex] = row
@@ -96,8 +96,8 @@ class BoardViewModel @AssistedInject constructor(
     }
 
     fun addBasePiecesToRow(rowIndex: Int, light: Boolean) {
-        val size = _boardState.value.size
-        val row = _boardState.value.rows.getOrNull(rowIndex)?.toMutableList() ?: return
+        val size = _Chess_boardState.value.size
+        val row = _Chess_boardState.value.rows.getOrNull(rowIndex)?.toMutableList() ?: return
 
         row[0] = row[0].copy(
             piece = Rook(
@@ -147,7 +147,7 @@ class BoardViewModel @AssistedInject constructor(
             )
         )
 
-        _boardState.update {
+        _Chess_boardState.update {
             it.copy(
                 rows = it.rows.toMutableList().apply {
                     this[rowIndex] = row
@@ -166,7 +166,7 @@ class BoardViewModel @AssistedInject constructor(
             fromSquare.piece?.move(fromSquare, clickedSquare, boardState.value)?.let { moveResult ->
                 val toSquare = clickedSquare.copy(piece = fromSquare.piece.moved(), active = false)
 
-                _boardState.update { state ->
+                _Chess_boardState.update { state ->
                     state.copy(
                         rows = state.rows.toMutableList().apply {
                             this[row] = this[row].toMutableList().apply {
@@ -203,7 +203,7 @@ class BoardViewModel @AssistedInject constructor(
             }
         }
 
-        _boardState.update { state ->
+        _Chess_boardState.update { state ->
             state.copy(
                 rows = state.rows.toMutableList().apply {
                     this[row] = this[row].toMutableList().apply {

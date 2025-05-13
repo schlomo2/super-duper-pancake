@@ -1,4 +1,4 @@
-package com.instantiasoft.nqueens.model
+package com.instantiasoft.nqueens.data.model
 
 enum class MoveDirection {
     North,
@@ -12,6 +12,6 @@ enum class MoveDirection {
 }
 
 data class Move(
-    val piece: Piece,
-    val direction: MoveDirection
+    val direction: MoveDirection,
+    val collision: Boolean = false
 )

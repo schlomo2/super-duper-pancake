@@ -1,6 +1,6 @@
-package com.instantiasoft.nqueens.model
+package com.instantiasoft.nqueens.data.model
 
-data class Board(
+data class ChessBoard(
     val size: Int = 8,
     val rows: List<List<Square>> = listOf(),
     val activeRow: Int? = null,

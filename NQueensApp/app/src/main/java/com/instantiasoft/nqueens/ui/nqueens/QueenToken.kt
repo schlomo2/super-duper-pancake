@@ -20,7 +20,8 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.instantiasoft.nqueens.R
-import com.instantiasoft.nqueens.model.NQueen
+import com.instantiasoft.nqueens.data.model.Collision
+import com.instantiasoft.nqueens.data.model.NQueen
 import kotlin.math.roundToInt
 
 @Composable
@@ -37,7 +38,12 @@ fun QueenToken(
             .clip(
                 CircleShape
             ).size(queensState.squareSizeDp.dp)
-            .background(Color(0xff96836b), CircleShape)
+            .background(
+                color = nQueen.square?.let { square ->
+                    Color.Red.takeIf { (queensState.collisionMap[Collision(square.row, square.col)]?.count() ?: 0) > 0 } ?:
+                    Color(0xff00aa55)
+                } ?: Color(0xff96836b), CircleShape
+            )
             .padding(1.5.dp)
             .border(2.dp, Color.White, CircleShape)
             .pointerInput(Unit) {

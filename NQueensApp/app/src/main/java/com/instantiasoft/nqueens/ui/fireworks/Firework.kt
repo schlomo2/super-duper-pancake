@@ -10,7 +10,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import com.instantiasoft.nqueens.model.Projectile
+import com.instantiasoft.nqueens.data.model.Projectile
 import com.instantiasoft.nqueens.ui.nqueens.NQueensViewModel
 import kotlin.math.roundToInt
 

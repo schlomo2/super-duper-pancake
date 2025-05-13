@@ -1,4 +1,4 @@
-package com.instantiasoft.nqueens.model
+package com.instantiasoft.nqueens.data.model
 
 enum class MoveType {
     Moved,

@@ -1,4 +1,4 @@
-package com.instantiasoft.nqueens.model
+package com.instantiasoft.nqueens.data.model
 
 import kotlin.math.abs
 
@@ -19,16 +19,17 @@ enum class PieceType {
 
 abstract class Piece(
     val type: PieceType,
-    val square: Square? = null,
-    val moves: List<Square> = emptyList(),
+    open val index: Int = 0,
+    open val square: Square? = null,
+    open val moves: List<Square> = emptyList(),
     open val light: Boolean,
     open val moved: Boolean = false
 ) {
     abstract fun moved(): Piece
-    abstract fun move(from: Square, to: Square, board: Board): MoveResult?
+    abstract fun move(from: Square, to: Square, board: ChessBoard): MoveResult?
 
     companion object {
-        fun testPath(from: Square, to: Square, rowOffset: Int, colOffset: Int, board: Board): MoveResult? {
+        fun testPath(from: Square, to: Square, rowOffset: Int, colOffset: Int, board: ChessBoard): MoveResult? {
             var row = from.row + rowOffset
             var col = from.col + colOffset
 
@@ -56,7 +57,7 @@ abstract class Piece(
             return null
         }
 
-        fun diagonal(from: Square, to: Square, board: Board): MoveResult? {
+        fun diagonal(from: Square, to: Square, board: ChessBoard): MoveResult? {
             if (from.light != to.light) return null
             if (from.row == to.row) return null
             if (from.col == to.col) return null
@@ -81,7 +82,7 @@ abstract class Piece(
             }
         }
 
-        fun straight(from: Square, to: Square, board: Board): MoveResult? {
+        fun straight(from: Square, to: Square, board: ChessBoard): MoveResult? {
             val rowDiff = to.row - from.row
             val colDiff = to.col - from.col
 
@@ -110,7 +111,7 @@ abstract class Piece(
 data class Pawn(
     override val light: Boolean, override val moved: Boolean = false
 ): Piece(type = PieceType.Pawn, light = light, moved = moved) {
-    override fun move(from: Square, to: Square, board: Board): MoveResult? {
+    override fun move(from: Square, to: Square, board: ChessBoard): MoveResult? {
         val colDiff = to.col - from.col
         val rowDiff = to.row - from.row
 
@@ -202,7 +203,7 @@ data class Pawn(
 data class Knight(
     override val light: Boolean, override val moved: Boolean = false
 ): Piece(type = PieceType.Knight, light = light, moved = moved) {
-    override fun move(from: Square, to: Square, board: Board): MoveResult? {
+    override fun move(from: Square, to: Square, board: ChessBoard): MoveResult? {
         val rowDiff = to.row - from.row
         val colDiff = to.col - from.col
 
@@ -230,7 +231,7 @@ data class Knight(
 data class Bishop(
     override val light: Boolean, override val moved: Boolean = false
 ): Piece(type = PieceType.Bishop, light = light, moved = moved) {
-    override fun move(from: Square, to: Square, board: Board): MoveResult? {
+    override fun move(from: Square, to: Square, board: ChessBoard): MoveResult? {
         return diagonal(from, to, board)
     }
 
@@ -242,7 +243,7 @@ data class Bishop(
 data class Rook(
     override val light: Boolean, override val moved: Boolean = false
 ): Piece(type = PieceType.Rook, light = light, moved = moved) {
-    override fun move(from: Square, to: Square, board: Board): MoveResult? {
+    override fun move(from: Square, to: Square, board: ChessBoard): MoveResult? {
         return straight(from, to, board)
     }
 
@@ -254,7 +255,7 @@ data class Rook(
 data class Queen(
     override val light: Boolean, override val moved: Boolean = false
 ): Piece(type = PieceType.Queen, light = light, moved = moved) {
-    override fun move(from: Square, to: Square, board: Board): MoveResult? {
+    override fun move(from: Square, to: Square, board: ChessBoard): MoveResult? {
         straight(from, to, board)?.let {
             return it
         }
@@ -270,7 +271,7 @@ data class Queen(
 data class King(
     override val light: Boolean, override val moved: Boolean = false
 ): Piece(type = PieceType.King, light = light, moved = moved) {
-    override fun move(from: Square, to: Square, board: Board): MoveResult? {
+    override fun move(from: Square, to: Square, chessBoard: ChessBoard): MoveResult? {
         val rowDiff = to.row - from.row
         val colDiff = to.col - from.col
 
@@ -278,7 +279,7 @@ data class King(
             if (colDiff < 0) {
                 var col = from.col - 1
                 while (col >= 0) {
-                    val square = board.getSquare(from.row, col) ?: return null
+                    val square = chessBoard.getSquare(from.row, col) ?: return null
                     square.piece?.let {
                         if (it.type != PieceType.Rook || it.moved) return null
                         return MoveResult(MoveType.Castle)
@@ -288,8 +289,8 @@ data class King(
                 }
             } else {
                 var col = from.col + 1
-                while (col < board.size) {
-                    val square = board.getSquare(from.row, col) ?: return null
+                while (col < chessBoard.size) {
+                    val square = chessBoard.getSquare(from.row, col) ?: return null
                     square.piece?.let {
                         if (it.type != PieceType.Rook || it.moved) return null
                         return MoveResult(MoveType.Castle)
@@ -304,11 +305,11 @@ data class King(
             return null
         }
 
-        straight(from, to, board)?.let {
+        straight(from, to, chessBoard)?.let {
             return it
         }
 
-        return diagonal(from, to, board)
+        return diagonal(from, to, chessBoard)
     }
 
     override fun moved(): Piece {

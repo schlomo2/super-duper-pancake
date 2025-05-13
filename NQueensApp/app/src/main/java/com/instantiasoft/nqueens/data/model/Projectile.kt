@@ -1,4 +1,4 @@
-package com.instantiasoft.nqueens.model
+package com.instantiasoft.nqueens.data.model
 
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color

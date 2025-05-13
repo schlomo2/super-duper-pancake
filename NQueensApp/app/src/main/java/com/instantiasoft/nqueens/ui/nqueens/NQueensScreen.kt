@@ -14,20 +14,22 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,9 +48,10 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.instantiasoft.nqueens.model.ProjectileType
+import com.instantiasoft.nqueens.data.model.ProjectileType
 import com.instantiasoft.nqueens.ui.fireworks.Firework
 import com.instantiasoft.nqueens.ui.fireworks.Rocket
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -56,11 +59,53 @@ fun NQueensScreen(
     size: Int,
     queensViewModel: NQueensViewModel = hiltViewModel<NQueensViewModel, NQueensViewModel.NQueensViewModelFactory> { factory ->
         factory.create(size)
-    },
-    onBack: () -> Unit
+    }
 ) {
     val config = LocalConfiguration.current
-    val queensState by queensViewModel.boardState.collectAsStateWithLifecycle()
+    val coroutineScope = rememberCoroutineScope()
+
+    val boardState by queensViewModel.boardState.collectAsStateWithLifecycle()
+    val padding = 16
+    val settingsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    LaunchedEffect(boardState) {
+        if (boardState.needsSetup) {
+            queensViewModel.setup(config.screenWidthDp-padding*2, config.screenHeightDp-padding*2)
+        }
+    }
+
+    NQueensScreen(
+        boardState = boardState,
+        onSettings = {
+            coroutineScope.launch {
+                settingsSheetState.show()
+            }
+        }
+    )
+
+    if (settingsSheetState.isVisible) {
+        SettingsSheet(
+            boardState = boardState,
+            sheetState = settingsSheetState,
+            onDismissRequest = {
+                coroutineScope.launch {
+                    settingsSheetState.hide()
+                }
+            }
+        )
+    }
+
+    SideEffect {
+        queensViewModel.updateAnimations()
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun NQueensScreen(
+    boardState: NQueensViewModel.BoardState,
+    onSettings: () -> Unit
+) {
 
     val overColor = Color(0xff00ffff)
     val lightColor = Color(0xfffefecc)
@@ -68,8 +113,6 @@ fun NQueensScreen(
 
     val gradientColor1 = Color(0xffC7B299)
     val gradientColor2 = Color(0xffF5F0E4)
-
-    val padding = 16
 
     val brush = Brush.linearGradient(
         colors = listOf(
@@ -79,39 +122,33 @@ fun NQueensScreen(
         end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
     )
 
-    LaunchedEffect(queensState) {
-        if (queensState.needsSetup) {
-            queensViewModel.setup(config.screenWidthDp-padding*2, config.screenHeightDp-padding*2)
-        }
-    }
-
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(brush)
     ) {
-        TopAppBar(
+        CenterAlignedTopAppBar(
             title = {
                 Text(
-                    text = "N-Queens"
+                    text = "N-Queens",
+                    fontSize = 30.sp,
+                    fontWeight = FontWeight.Bold
                 )
             },
-            navigationIcon = {
+            actions = {
                 IconButton(
-                    onClick = onBack
+                    onClick = onSettings
                 ) {
                     Icon(
-                        imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                        contentDescription = "Back"
+                        imageVector = Icons.Outlined.Settings,
+                        contentDescription = "Settings"
                     )
                 }
             },
             colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = gradientColor2
+                containerColor = Color.Transparent
             )
         )
-
-        HorizontalDivider(thickness = 2.dp)
 
         var rocketOrigin by remember { mutableStateOf(Offset(0f,0f)) }
         var tapOrigin by remember { mutableStateOf(Offset(0f, 0f)) }
@@ -124,7 +161,7 @@ fun NQueensScreen(
                 }
                 .pointerInput(Unit) {
                     detectTapGestures { offset ->
-                        queensState.onAddFirework(offset + tapOrigin - rocketOrigin)
+                        boardState.onAddFirework(offset + tapOrigin - rocketOrigin)
                     }
                 }
         ) {
@@ -146,23 +183,36 @@ fun NQueensScreen(
                         .border(4.dp, Color.Black)
                         .padding(4.dp)
                 ) {
-                    queensState.board.forEach { row ->
+                    for (row in 0 until boardState.size) {
                         Row {
-                            row.forEach { square ->
+                            for (col in 0 until boardState.size) {
+                                val square = boardState.board.square(row, col) ?: continue
                                 Box(
                                     modifier = Modifier
-                                        .size(queensState.squareSizeDp.dp)
+                                        .size(boardState.squareSizeDp.dp)
                                         .background(
                                             when {
-                                                queensState.overSquare == square -> overColor
+                                                boardState.overSquare == square -> overColor
                                                 square.light -> lightColor
                                                 else -> darkColor
                                             }
                                         )
                                         .onGloballyPositioned { layout ->
-                                            queensState.onSquarePositioned(square, layout)
+                                            boardState.onSquarePositioned(square, layout)
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    val paths = boardState.paths[row][col]
+                                    paths.forEach { move ->
+                                        if (boardState.showMoves || move.collision) {
+                                            MoveIcon(
+                                                square = square,
+                                                move = move,
+                                                multiple = paths.size > 1
+                                            )
                                         }
-                                )
+                                    }
+                                }
                             }
                         }
                     }
@@ -190,15 +240,15 @@ fun NQueensScreen(
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(queensState.squareSizeDp.dp)
+                                .size(boardState.squareSizeDp.dp)
                                 .onGloballyPositioned {
-                                    queensState.onDragOriginPositioned(it)
+                                    boardState.onDragOriginPositioned(it)
                                 },
                             contentAlignment = Alignment.Center
                         ) {
-                            queensState.queens.forEachIndexed { index, nQueen ->
+                            boardState.queens.forEachIndexed { index, nQueen ->
                                 QueenToken(
-                                    queensState, nQueen, index
+                                    boardState, nQueen, index
                                 )
                             }
                         }
@@ -206,7 +256,7 @@ fun NQueensScreen(
                         Spacer(modifier = Modifier.width(16.dp))
 
                         Text(
-                            "${queensState.size}",
+                            text = boardState.availableQueens.toString(),
                             fontSize = 32.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color.Black
@@ -226,7 +276,7 @@ fun NQueensScreen(
                         rocketOrigin = it.positionInWindow()
                     }
             ) {
-                queensState.projectileUpdateList.forEach {
+                boardState.projectileUpdateList.forEach {
                     when(it.type) {
                         ProjectileType.Rocket -> Rocket(it)
                         ProjectileType.Firework -> Firework(it)
@@ -235,9 +285,5 @@ fun NQueensScreen(
                 }
             }
         }
-    }
-
-    SideEffect {
-        queensViewModel.updateAnimations()
     }
 }
