@@ -30,6 +30,7 @@ import kotlin.math.roundToInt
 @Composable
 fun SettingsSheet(
     boardState: NQueensViewModel.BoardState,
+    boardActions: NQueensViewModel.BoardActions,
     sheetState: SheetState,
     onDismissRequest: () -> Unit
 ) {
@@ -68,7 +69,7 @@ fun SettingsSheet(
 
                     val size = ((it * steps) + minSize).roundToInt().coerceIn(minSize, maxSize)
                     if (size != boardState.size) {
-                        boardState.onUpdateSize(size)
+                        boardActions.onUpdateSize(size)
                     }
                 },
                 steps = steps,
@@ -89,7 +90,7 @@ fun SettingsSheet(
                 Switch(
                     checked = boardState.showMoves,
                     onCheckedChange = {
-                        boardState.onUpdateShowMoves(it)
+                        boardActions.onUpdateShowMoves(it)
                     }
                 )
             }

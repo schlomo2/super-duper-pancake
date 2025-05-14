@@ -3,6 +3,7 @@ package com.instantiasoft.nqueens.ui.nqueens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
@@ -26,7 +27,8 @@ import kotlin.math.roundToInt
 
 @Composable
 fun QueenToken(
-    queensState: NQueensViewModel.BoardState,
+    boardState: NQueensViewModel.BoardState,
+    boardActions: NQueensViewModel.BoardActions,
     nQueen: NQueen,
     index: Int
 ) {
@@ -37,23 +39,31 @@ fun QueenToken(
             }.padding(2.dp)
             .clip(
                 CircleShape
-            ).size(queensState.squareSizeDp.dp)
+            ).size(boardState.squareSizeDp.dp)
             .background(
                 color = nQueen.square?.let { square ->
-                    Color.Red.takeIf { (queensState.collisionMap[Collision(square.row, square.col)]?.count() ?: 0) > 0 } ?:
+                    Color.Red.takeIf { (boardState.collisionMap[Collision(square.row, square.col)]?.count() ?: 0) > 0 } ?:
                     Color(0xff00aa55)
                 } ?: Color(0xff96836b), CircleShape
             )
             .padding(1.5.dp)
             .border(2.dp, Color.White, CircleShape)
-            .pointerInput(Unit) {
+            .pointerInput(boardState) {
+                detectTapGestures(
+                    onDoubleTap = {
+                        nQueen.square?.let {
+                            boardActions.onReturnQueen(nQueen)
+                        }
+                    }
+                )
+            }.pointerInput(Unit) {
                 detectDragGestures(
                     onDragEnd = {
-                        queensState.onDragEnd(index)
+                        boardActions.onDragEnd(index)
                     }
                 ) { change, dragAmount ->
                     change.consume()
-                    queensState.onDrag(index, dragAmount)
+                    boardActions.onDrag(index, dragAmount)
                 }
             },
         contentAlignment = Alignment.Center

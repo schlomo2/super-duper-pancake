@@ -1,25 +1,35 @@
 package com.instantiasoft.nqueens.ui.nqueens
 
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -37,12 +47,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -65,6 +77,7 @@ fun NQueensScreen(
     val coroutineScope = rememberCoroutineScope()
 
     val boardState by queensViewModel.boardState.collectAsStateWithLifecycle()
+    val boardActions by queensViewModel.boardActions.collectAsStateWithLifecycle()
     val padding = 16
     val settingsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -76,6 +89,7 @@ fun NQueensScreen(
 
     NQueensScreen(
         boardState = boardState,
+        boardActions = boardActions,
         onSettings = {
             coroutineScope.launch {
                 settingsSheetState.show()
@@ -86,6 +100,7 @@ fun NQueensScreen(
     if (settingsSheetState.isVisible) {
         SettingsSheet(
             boardState = boardState,
+            boardActions = boardActions,
             sheetState = settingsSheetState,
             onDismissRequest = {
                 coroutineScope.launch {
@@ -104,6 +119,7 @@ fun NQueensScreen(
 @Composable
 fun NQueensScreen(
     boardState: NQueensViewModel.BoardState,
+    boardActions: NQueensViewModel.BoardActions,
     onSettings: () -> Unit
 ) {
 
@@ -135,6 +151,21 @@ fun NQueensScreen(
                     fontWeight = FontWeight.Bold
                 )
             },
+            navigationIcon = {
+                IconButton(
+                    onClick = {
+                        boardActions.onRestart()
+                    }
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Refresh,
+                        contentDescription = "Restart",
+                        modifier = Modifier.graphicsLayer {
+                            this.rotationY = 180f
+                        }
+                    )
+                }
+            },
             actions = {
                 IconButton(
                     onClick = onSettings
@@ -154,21 +185,38 @@ fun NQueensScreen(
         var tapOrigin by remember { mutableStateOf(Offset(0f, 0f)) }
 
         Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .onGloballyPositioned {
-                    tapOrigin = it.positionInWindow()
-                }
-                .pointerInput(Unit) {
-                    detectTapGestures { offset ->
-                        boardState.onAddFirework(offset + tapOrigin - rocketOrigin)
-                    }
-                }
+            modifier = Modifier.fillMaxSize()
         ) {
             Column(
                 modifier = Modifier.align(Alignment.Center),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                Box(modifier = Modifier
+                    .heightIn(80.dp)
+                    .fillMaxWidth(),
+                    contentAlignment = Alignment.Center) {
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = boardState.playing,
+                        enter = fadeIn(),
+                        exit = fadeOut()
+                    ) {
+                        Box(modifier = Modifier
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Color.Black)
+                            .widthIn(min = 120.dp)
+                            .padding(horizontal = 20.dp, vertical = 16.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "${(boardState.playingMillis / 1000)}",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                textAlign = TextAlign.Center,
+                                fontSize = 40.sp
+                            )
+                        }
+                    }
+                }
                 Text(
                     text = "Place all of the queens on the board without threatening each other",
                     modifier = Modifier.padding(horizontal = 32.dp, vertical = 32.dp),
@@ -198,7 +246,12 @@ fun NQueensScreen(
                                             }
                                         )
                                         .onGloballyPositioned { layout ->
-                                            boardState.onSquarePositioned(square, layout)
+                                            boardActions.onSquarePositioned(square, layout)
+                                        }
+                                        .pointerInput(boardState) {
+                                            detectTapGestures {
+                                                boardActions.onAddQueen(square)
+                                            }
                                         },
                                     contentAlignment = Alignment.Center
                                 ) {
@@ -242,13 +295,13 @@ fun NQueensScreen(
                             modifier = Modifier
                                 .size(boardState.squareSizeDp.dp)
                                 .onGloballyPositioned {
-                                    boardState.onDragOriginPositioned(it)
+                                    boardActions.onDragOriginPositioned(it)
                                 },
                             contentAlignment = Alignment.Center
                         ) {
                             boardState.queens.forEachIndexed { index, nQueen ->
                                 QueenToken(
-                                    boardState, nQueen, index
+                                    boardState, boardActions, nQueen, index
                                 )
                             }
                         }
@@ -259,7 +312,9 @@ fun NQueensScreen(
                             text = boardState.availableQueens.toString(),
                             fontSize = 32.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color.Black
+                            color = Color.Black,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.width(40.dp)
                         )
 
                         Spacer(modifier = Modifier.width(8.dp))
@@ -267,6 +322,63 @@ fun NQueensScreen(
                 }
 
                 Spacer(modifier = Modifier.height(32.dp))
+            }
+
+            androidx.compose.animation.AnimatedVisibility(
+                visible = boardState.complete || !boardState.playing,
+                enter = fadeIn(),
+                exit = fadeOut()
+            ) {
+                Box(Modifier
+                    .fillMaxSize()
+                    .background(Color(if (boardState.complete) 0x44000000 else 0x11000000))
+                    .onGloballyPositioned {
+                        tapOrigin = it.positionInWindow()
+                    }
+                    .pointerInput(boardState) {
+                        detectTapGestures { offset ->
+                            if (boardState.complete) {
+                                boardActions.onAddFirework(offset + tapOrigin - rocketOrigin)
+                            } else {
+                                boardActions.onRestart()
+                            }
+                        }
+                    }
+                ) {
+                    if (!boardState.complete) {
+                        Box(
+                            modifier = Modifier
+                                .padding(top = 32.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .border(10.dp, Color.White, RoundedCornerShape(16.dp))
+                                .background(color = darkColor)
+                                .padding(horizontal = 32.dp, vertical = 32.dp)
+                                .align(Alignment.TopCenter),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Tap to start",
+                                color = Color.White,
+                                fontSize = 32.sp,
+                                fontWeight = FontWeight.Bold,
+                                textAlign = TextAlign.Center,
+                            )
+                        }
+                    }
+                }
+            }
+
+            androidx.compose.animation.AnimatedVisibility(
+                visible = boardState.complete,
+                enter = slideInVertically { -it*2 },
+                exit = slideOutVertically { -it*2 }
+            ) {
+                SuccessPanel(
+                    boardState = boardState,
+                    boardActions = boardActions,
+                    contentColor = Color.White,
+                    backgroundColor = darkColor
+                )
             }
 
             Box(
@@ -286,4 +398,77 @@ fun NQueensScreen(
             }
         }
     }
+}
+
+@Composable
+fun SuccessPanel(
+    boardState: NQueensViewModel.BoardState,
+    boardActions: NQueensViewModel.BoardActions,
+    contentColor: Color,
+    backgroundColor: Color
+) {
+    Box(modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = 16.dp, vertical = 32.dp)
+        .clickable {
+            boardActions.onRestart()
+        },
+        contentAlignment = Alignment.Center
+    ) {
+        Column(modifier = Modifier
+            .clip(RoundedCornerShape(16.dp))
+            .fillMaxWidth()
+            .border(10.dp, contentColor, RoundedCornerShape(16.dp))
+            .background(color = backgroundColor)
+            .padding(horizontal = 32.dp, vertical = 32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "SUCCESS",
+                color = contentColor,
+                fontSize = 42.sp,
+                fontWeight = FontWeight.Bold
+            )
+
+            Spacer(Modifier.height(16.dp))
+
+            Text(
+                text = "You placed ${boardState.size} Queens in",
+                color = contentColor,
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            Text(
+                text = "${boardState.playingMillis/1000} seconds",
+                color = contentColor,
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold
+            )
+
+            Spacer(Modifier.height(24.dp))
+
+            Text(
+                text = "(Click this panel to try again)",
+                color = contentColor,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+@Preview
+@Composable
+fun NQueensScreenPreview() {
+    NQueensScreen(
+        boardState = NQueensViewModel.updateSize(8).copy(squareSizeDp = 40),
+        boardActions = NQueensViewModel.BoardActions(
+            {},{_,_->},{},{_,_->},{},{},{},{},{},{}
+        ),
+        onSettings = {}
+    )
 }

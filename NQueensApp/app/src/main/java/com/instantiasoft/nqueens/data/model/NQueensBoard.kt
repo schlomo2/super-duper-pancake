@@ -21,6 +21,18 @@ data class NQueensBoard(
         return this
     }
 
+    fun updateSquare(row: Int, col: Int, piece: NQueen?): NQueensBoard {
+        row.takeIf { it in 0..<size }?.let {
+            col.takeIf { it in 0..<size }?.let {
+                val updatedSquares = squares.copyOf()
+                updatedSquares[row][col] = updatedSquares[row][col].copy(pieceIndex = piece?.index)
+                return NQueensBoard(updatedSquares)
+            }
+        }
+
+        return this
+    }
+
     fun updateSquares(squareList: List<Square>): NQueensBoard {
         val updatedSquares = squares.copyOf()
         squareList.forEach { square ->
@@ -49,7 +61,7 @@ data class NQueensBoard(
     }
 
     fun hasPiece(row: Int, col: Int): Boolean {
-        return squares.getOrNull(row)?.getOrNull(col)?.piece != null
+        return squares.getOrNull(row)?.getOrNull(col)?.pieceIndex != null
     }
 
     override fun equals(other: Any?): Boolean {

@@ -7,7 +7,7 @@ data class Square(
     val row: Int,
     val col: Int,
     val light: Boolean,
-    val piece: Piece? = null,
+    val pieceIndex: Int? = null,
     val active: Boolean = false,
     val position: Offset = Offset(0f,0f),
     val size: IntSize = IntSize(0, 0)
