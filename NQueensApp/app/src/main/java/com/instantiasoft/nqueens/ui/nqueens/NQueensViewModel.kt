@@ -17,8 +17,10 @@ import com.instantiasoft.nqueens.data.model.ProjectileColor
 import com.instantiasoft.nqueens.data.model.ProjectileType
 import com.instantiasoft.nqueens.data.model.Square
 import com.instantiasoft.nqueens.data.preferences.AppDataStore
+import com.instantiasoft.nqueens.di.IODispatcher
 import com.instantiasoft.nqueens.extensions.distance
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -35,7 +37,8 @@ import kotlin.random.Random
 
 @HiltViewModel
 class NQueensViewModel @Inject constructor(
-    private val appDataStore: AppDataStore
+    private val appDataStore: AppDataStore,
+    @IODispatcher private val dispatcher: CoroutineDispatcher
 ) : ViewModel() {
     data class OffsetState(
         val src: Offset,
@@ -271,7 +274,7 @@ class NQueensViewModel @Inject constructor(
     }
 
     private fun calculatePaths() {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(dispatcher) {
             val state = boardState.value
 
             val board = state.board
@@ -778,7 +781,7 @@ class NQueensViewModel @Inject constructor(
     }
 
     private fun onAddRockets(count: Int) {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(dispatcher) {
             repeat(count) {
                 _boardState.update { state ->
                     state.copy(
@@ -804,7 +807,7 @@ class NQueensViewModel @Inject constructor(
 
     fun onUpdateSize(size: Int, updateDataStore: Boolean = true) {
         if (updateDataStore) {
-            viewModelScope.launch(Dispatchers.IO) {
+            viewModelScope.launch(dispatcher) {
                 appDataStore.setBoardSize(size)
             }
         }
@@ -818,7 +821,7 @@ class NQueensViewModel @Inject constructor(
 
     fun onUpdateShowMoves(show: Boolean, updateDataStore: Boolean = true) {
         if (updateDataStore) {
-            viewModelScope.launch(Dispatchers.IO) {
+            viewModelScope.launch(dispatcher) {
                 appDataStore.setShowMoves(show)
             }
         }
@@ -897,7 +900,7 @@ class NQueensViewModel @Inject constructor(
             )
         }
 
-        timerJob = viewModelScope.launch(Dispatchers.IO) {
+        timerJob = viewModelScope.launch(dispatcher) {
             while(true) {
                 delay(1000)
                 _gameState.update {
@@ -920,7 +923,7 @@ class NQueensViewModel @Inject constructor(
             prevMillis = it
         }
 
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(dispatcher) {
             val bestTimes = gameState.value.bestTimes
             appDataStore.setBestTimes(
                 bestTimes.copy(
@@ -947,7 +950,7 @@ class NQueensViewModel @Inject constructor(
     }
 
     private fun setupDataStore() {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(dispatcher) {
             appDataStore.boardSize.collect {
                 if (boardState.value.size != it) {
                     onUpdateSize(it, false)
@@ -955,13 +958,13 @@ class NQueensViewModel @Inject constructor(
             }
         }
 
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(dispatcher) {
             appDataStore.showMoves.collect {
                 onUpdateShowMoves(it, false)
             }
         }
 
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(dispatcher) {
             appDataStore.bestTimes.collect { times ->
                 _gameState.update {
                     it.copy(bestTimes = times)
