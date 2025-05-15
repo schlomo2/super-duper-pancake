@@ -15,9 +15,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             NQueensAppTheme {
-                NQueensScreen(
-                    size = 8
-                )
+                NQueensScreen()
             }
         }
     }

@@ -12,6 +12,7 @@ enum class MoveDirection {
 }
 
 data class Move(
+    val pieceIndex: Int?,
     val direction: MoveDirection,
     val collision: Boolean = false
 )

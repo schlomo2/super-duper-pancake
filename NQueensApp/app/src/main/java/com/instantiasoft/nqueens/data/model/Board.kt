@@ -1,6 +1,6 @@
 package com.instantiasoft.nqueens.data.model
 
-data class NQueensBoard(
+data class Board(
     val squares: Array<Array<Square>> = emptyArray(),
 ) {
     val size: Int get() = squares.size
@@ -9,31 +9,31 @@ data class NQueensBoard(
         return squares.getOrNull(row)?.getOrNull(col)
     }
 
-    fun updateSquare(square: Square): NQueensBoard {
+    fun updateSquare(square: Square): Board {
         square.row.takeIf { it in 0..<size }?.let { row ->
             square.col.takeIf { it in 0..<size }?.let { col ->
                 val updatedSquares = squares.copyOf()
                 updatedSquares[row][col] = square
-                return NQueensBoard(updatedSquares)
+                return Board(updatedSquares)
             }
         }
 
         return this
     }
 
-    fun updateSquare(row: Int, col: Int, piece: NQueen?): NQueensBoard {
+    fun updateSquare(row: Int, col: Int, piece: NQueen?): Board {
         row.takeIf { it in 0..<size }?.let {
             col.takeIf { it in 0..<size }?.let {
                 val updatedSquares = squares.copyOf()
                 updatedSquares[row][col] = updatedSquares[row][col].copy(pieceIndex = piece?.index)
-                return NQueensBoard(updatedSquares)
+                return Board(updatedSquares)
             }
         }
 
         return this
     }
 
-    fun updateSquares(squareList: List<Square>): NQueensBoard {
+    fun updateSquares(squareList: List<Square>): Board {
         val updatedSquares = squares.copyOf()
         squareList.forEach { square ->
             square.row.takeIf { it in 0..<size }?.let { row ->
@@ -43,7 +43,7 @@ data class NQueensBoard(
             }
         }
 
-        return NQueensBoard(updatedSquares)
+        return Board(updatedSquares)
     }
 
     fun overSquare(dragPosX: Float, dragPosY: Float): Square? {
@@ -68,7 +68,7 @@ data class NQueensBoard(
         if (this === other) return true
         if (javaClass != other?.javaClass) return false
 
-        other as NQueensBoard
+        other as Board
 
         return squares.contentDeepEquals(other.squares)
     }

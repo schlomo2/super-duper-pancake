@@ -36,7 +36,7 @@ fun SettingsSheet(
 ) {
     val minSize = 4
     val maxSize = 16
-    val steps = maxSize - minSize
+    val steps = maxSize - minSize - 1
 
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
@@ -57,7 +57,7 @@ fun SettingsSheet(
             var sliderPosition by remember { mutableFloatStateOf((boardState.size - minSize).coerceIn(0, steps).toFloat()/steps) }
 
             Text(
-                text = "Board size: ${(sliderPosition * steps).roundToInt() + minSize}",
+                text = "Board size: ${(sliderPosition * steps + 0.25f).roundToInt() + minSize}",
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Medium
             )
@@ -67,7 +67,7 @@ fun SettingsSheet(
                 onValueChange = {
                     sliderPosition = it
 
-                    val size = ((it * steps) + minSize).roundToInt().coerceIn(minSize, maxSize)
+                    val size = ((it * steps) + minSize + 0.25f).roundToInt().coerceIn(minSize, maxSize)
                     if (size != boardState.size) {
                         boardActions.onUpdateSize(size)
                     }

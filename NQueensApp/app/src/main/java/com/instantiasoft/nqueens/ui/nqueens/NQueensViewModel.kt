@@ -5,19 +5,19 @@ import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.positionInWindow
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.instantiasoft.nqueens.data.model.BestTimes
+import com.instantiasoft.nqueens.data.model.Board
 import com.instantiasoft.nqueens.data.model.Collision
 import com.instantiasoft.nqueens.data.model.Move
 import com.instantiasoft.nqueens.data.model.MoveDirection
-import com.instantiasoft.nqueens.extensions.distance
 import com.instantiasoft.nqueens.data.model.NQueen
-import com.instantiasoft.nqueens.data.model.NQueensBoard
+import com.instantiasoft.nqueens.data.model.Paths
 import com.instantiasoft.nqueens.data.model.Projectile
 import com.instantiasoft.nqueens.data.model.ProjectileColor
 import com.instantiasoft.nqueens.data.model.ProjectileType
 import com.instantiasoft.nqueens.data.model.Square
-import dagger.assisted.Assisted
-import dagger.assisted.AssistedFactory
-import dagger.assisted.AssistedInject
+import com.instantiasoft.nqueens.data.preferences.AppDataStore
+import com.instantiasoft.nqueens.extensions.distance
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -26,20 +26,17 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
+import javax.inject.Inject
 import kotlin.math.acos
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.random.Random
 
-@HiltViewModel(assistedFactory = NQueensViewModel.NQueensViewModelFactory::class)
-class NQueensViewModel @AssistedInject constructor(
-    @Assisted val size: Int
+@HiltViewModel
+class NQueensViewModel @Inject constructor(
+    private val appDataStore: AppDataStore
 ) : ViewModel() {
-    @AssistedFactory
-    interface NQueensViewModelFactory {
-        fun create(size: Int): NQueensViewModel
-    }
-
     data class OffsetState(
         val src: Offset,
         val dst: Offset,
@@ -49,12 +46,23 @@ class NQueensViewModel @AssistedInject constructor(
         val square: Square? = null
     )
 
+    data class GameState(
+        val complete: Boolean = false,
+        val playingMillis: Long = 0,
+        val prevMillis: Long = 0,
+        val playing: Boolean = false,
+        val bestTimes: BestTimes = BestTimes()
+    )
+
+    private val _gameState = MutableStateFlow(GameState())
+    val gameState = _gameState.asStateFlow()
+
     data class BoardState(
         val setupSize: Int = 0,
         val size: Int = 0,
         val queens: List<NQueen> = emptyList(),
-        val board: NQueensBoard = NQueensBoard(),
-        val paths: Array<Array<List<Move>>> = emptyArray(),
+        val board: Board = Board(),
+        val paths: Paths = Paths(),
         val collisionMap: Map<Collision, List<MoveDirection>> = emptyMap(),
         val queenUpdateMap: Map<Int, OffsetState> = emptyMap(),
         val projectileUpdateList: List<Projectile> = emptyList(),
@@ -66,10 +74,7 @@ class NQueensViewModel @AssistedInject constructor(
         val dragIndex: Int? = null,
         val calculatePaths: Boolean = false,
         val availableQueens: Int = 0,
-        val showMoves: Boolean = false,
-        val complete: Boolean = false,
-        val playingMillis: Long = 0,
-        val playing: Boolean = false
+        val showMoves: Boolean = false
     ) {
         val needsSetup: Boolean get() = setupSize != size
     }
@@ -109,7 +114,7 @@ class NQueensViewModel @AssistedInject constructor(
     private var timerJob: Job? = null
 
     init {
-        onUpdateSize(size)
+        setupDataStore()
     }
 
     fun setup(widthDp: Int, heightDp: Int) {
@@ -124,7 +129,7 @@ class NQueensViewModel @AssistedInject constructor(
         val squareSizeDp = sizeDp / boardState.value.size
         _boardState.update { state ->
             state.copy(
-                setupSize = size,
+                setupSize = boardState.value.size,
                 squareSizeDp = squareSizeDp.takeIf { it < MAX_SQUARE_SIZE } ?: MAX_SQUARE_SIZE
             )
         }
@@ -159,7 +164,7 @@ class NQueensViewModel @AssistedInject constructor(
         }
     }
 
-    fun addQueenAnimation(
+    private fun addQueenAnimation(
         index: Int,
         src: Offset,
         dst: Offset,
@@ -220,7 +225,7 @@ class NQueensViewModel @AssistedInject constructor(
         }
     }
 
-    fun moveQueen(index: Int) {
+    private fun moveQueen(index: Int) {
         val queen = boardState.value.queens.getOrNull(index) ?: return
 
         val state = boardState.value
@@ -265,20 +270,17 @@ class NQueensViewModel @AssistedInject constructor(
         }
     }
 
-    fun calculatePaths() {
+    private fun calculatePaths() {
         viewModelScope.launch(Dispatchers.IO) {
             val state = boardState.value
 
             val board = state.board
-            val paths: Array<Array<List<Move>>> = Array(state.size) {
-                Array(state.size) {
-                    emptyList()
-                }
-            }
+            val paths = Paths.getPathArray(state.size)
+
             val collisions = mutableMapOf<Collision, List<MoveDirection>>()
 
             state.queens.forEach { queen ->
-                val square = queen.square ?: return@forEach
+                val square = queen.square?.copy(pieceIndex = queen.index) ?: return@forEach
 
                 checkWest(board, paths, square, collisions)
                 checkEast(board, paths, square, collisions)
@@ -294,27 +296,31 @@ class NQueensViewModel @AssistedInject constructor(
                 it.index != state.dragIndex && it.square == null
             }.size
 
-            val complete = !state.complete && collisions.isEmpty() && availableQueens == 0 && state.dragIndex == null
-
             _boardState.update { updateState ->
                 updateState.copy(
-                    paths = paths,
+                    paths = Paths(paths),
                     collisionMap = collisions,
                     calculatePaths = false,
-                    availableQueens = availableQueens,
-                    complete = updateState.complete || complete
+                    availableQueens = availableQueens
                 )
             }
 
-            if (complete) {
+            if (!gameState.value.complete && collisions.isEmpty() && availableQueens == 0 && state.dragIndex == null) {
+                _gameState.update {
+                    it.copy(
+                        complete = true
+                    )
+                }
+
+                updateBestTime()
                 stopTimer()
                 onAddRockets(10)
             }
         }
     }
 
-    fun checkWest(
-        board: NQueensBoard,
+    private fun checkWest(
+        board: Board,
         paths: Array<Array<List<Move>>>,
         square: Square,
         collisionMap: MutableMap<Collision, List<MoveDirection>>
@@ -345,14 +351,14 @@ class NQueensViewModel @AssistedInject constructor(
                 }
             } else {
                 paths[row][col] =
-                    paths[row][col].plus(Move(MoveDirection.West, collision = collision))
+                    paths[row][col].plus(Move(square.pieceIndex, MoveDirection.West, collision = collision))
             }
             col++
         }
     }
 
-    fun checkEast(
-        board: NQueensBoard,
+    private fun checkEast(
+        board: Board,
         paths: Array<Array<List<Move>>>,
         square: Square,
         collisionMap: MutableMap<Collision, List<MoveDirection>>
@@ -382,14 +388,14 @@ class NQueensViewModel @AssistedInject constructor(
                     }
                 }
             } else {
-                paths[row][col] = paths[row][col].plus(Move(MoveDirection.East, collision))
+                paths[row][col] = paths[row][col].plus(Move(square.pieceIndex, MoveDirection.East, collision))
             }
             col--
         }
     }
 
-    fun checkNorth(
-        board: NQueensBoard,
+    private fun checkNorth(
+        board: Board,
         paths: Array<Array<List<Move>>>,
         square: Square,
         collisionMap: MutableMap<Collision, List<MoveDirection>>
@@ -419,14 +425,14 @@ class NQueensViewModel @AssistedInject constructor(
                     }
                 }
             } else {
-                paths[row][col] = paths[row][col].plus(Move(MoveDirection.North, collision))
+                paths[row][col] = paths[row][col].plus(Move(square.pieceIndex, MoveDirection.North, collision))
             }
             row++
         }
     }
 
-    fun checkSouth(
-        board: NQueensBoard,
+    private fun checkSouth(
+        board: Board,
         paths: Array<Array<List<Move>>>,
         square: Square,
         collisionMap: MutableMap<Collision, List<MoveDirection>>
@@ -456,14 +462,14 @@ class NQueensViewModel @AssistedInject constructor(
                     }
                 }
             } else {
-                paths[row][col] = paths[row][col].plus(Move(MoveDirection.South, collision))
+                paths[row][col] = paths[row][col].plus(Move(square.pieceIndex, MoveDirection.South, collision))
             }
             row--
         }
     }
 
-    fun checkNorthWest(
-        board: NQueensBoard,
+    private fun checkNorthWest(
+        board: Board,
         paths: Array<Array<List<Move>>>,
         square: Square,
         collisionMap: MutableMap<Collision, List<MoveDirection>>
@@ -495,15 +501,15 @@ class NQueensViewModel @AssistedInject constructor(
                     }
                 }
             } else {
-                paths[row][col] = paths[row][col].plus(Move(MoveDirection.NorthWest, collision))
+                paths[row][col] = paths[row][col].plus(Move(square.pieceIndex, MoveDirection.NorthWest, collision))
             }
             row++
             col++
         }
     }
 
-    fun checkNorthEast(
-        board: NQueensBoard,
+    private fun checkNorthEast(
+        board: Board,
         paths: Array<Array<List<Move>>>,
         square: Square,
         collisionMap: MutableMap<Collision, List<MoveDirection>>
@@ -535,15 +541,15 @@ class NQueensViewModel @AssistedInject constructor(
                     }
                 }
             } else {
-                paths[row][col] = paths[row][col].plus(Move(MoveDirection.NorthEast, collision))
+                paths[row][col] = paths[row][col].plus(Move(square.pieceIndex, MoveDirection.NorthEast, collision))
             }
             row++
             col--
         }
     }
 
-    fun checkSouthEast(
-        board: NQueensBoard,
+    private fun checkSouthEast(
+        board: Board,
         paths: Array<Array<List<Move>>>,
         square: Square,
         collisionMap: MutableMap<Collision, List<MoveDirection>>
@@ -575,15 +581,15 @@ class NQueensViewModel @AssistedInject constructor(
                     }
                 }
             } else {
-                paths[row][col] = paths[row][col].plus(Move(MoveDirection.SouthEast, collision))
+                paths[row][col] = paths[row][col].plus(Move(square.pieceIndex, MoveDirection.SouthEast, collision))
             }
             row--
             col--
         }
     }
 
-    fun checkSouthWest(
-        board: NQueensBoard,
+    private fun checkSouthWest(
+        board: Board,
         paths: Array<Array<List<Move>>>,
         square: Square,
         collisionMap: MutableMap<Collision, List<MoveDirection>>
@@ -615,7 +621,7 @@ class NQueensViewModel @AssistedInject constructor(
                     }
                 }
             } else {
-                paths[row][col] = paths[row][col].plus(Move(MoveDirection.SouthWest, collision))
+                paths[row][col] = paths[row][col].plus(Move(square.pieceIndex, MoveDirection.SouthWest, collision))
             }
             row--
             col++
@@ -634,7 +640,7 @@ class NQueensViewModel @AssistedInject constructor(
         updateProjectiles()
     }
 
-    fun updateQueens() {
+    private fun updateQueens() {
         if (boardState.value.queenUpdateMap.isEmpty()) return
 
         val millis = System.currentTimeMillis()
@@ -674,7 +680,7 @@ class NQueensViewModel @AssistedInject constructor(
         }
     }
 
-    fun updateProjectiles() {
+    private fun updateProjectiles() {
         if (boardState.value.projectileUpdateList.isEmpty()) return
 
         val millis = System.currentTimeMillis()
@@ -738,7 +744,7 @@ class NQueensViewModel @AssistedInject constructor(
         }
     }
 
-    fun addFireworks(
+    private fun addFireworks(
         offset: Offset,
         color: ProjectileColor? = null,
         projectileCount: Int = 50
@@ -771,7 +777,7 @@ class NQueensViewModel @AssistedInject constructor(
         return projectiles
     }
 
-    fun onAddRockets(count: Int) {
+    private fun onAddRockets(count: Int) {
         viewModelScope.launch(Dispatchers.IO) {
             repeat(count) {
                 _boardState.update { state ->
@@ -796,7 +802,13 @@ class NQueensViewModel @AssistedInject constructor(
         }
     }
 
-    fun onUpdateSize(size: Int) {
+    fun onUpdateSize(size: Int, updateDataStore: Boolean = true) {
+        if (updateDataStore) {
+            viewModelScope.launch(Dispatchers.IO) {
+                appDataStore.setBoardSize(size)
+            }
+        }
+
         stopTimer()
 
         _boardState.update {
@@ -804,7 +816,13 @@ class NQueensViewModel @AssistedInject constructor(
         }
     }
 
-    fun onUpdateShowMoves(show: Boolean) {
+    fun onUpdateShowMoves(show: Boolean, updateDataStore: Boolean = true) {
+        if (updateDataStore) {
+            viewModelScope.launch(Dispatchers.IO) {
+                appDataStore.setShowMoves(show)
+            }
+        }
+
         _boardState.update {
             it.copy(
                 showMoves = show
@@ -815,7 +833,7 @@ class NQueensViewModel @AssistedInject constructor(
     fun onRestart() {
         val queens = boardState.value.queens
 
-        _boardState.update {
+        _gameState.update {
             it.copy(
                 complete = false,
                 playing = true
@@ -869,10 +887,10 @@ class NQueensViewModel @AssistedInject constructor(
         addQueenAnimation(queen.index, src, dst)
     }
 
-    fun resetTimer() {
+    private fun resetTimer() {
         timerJob?.cancel()
 
-        _boardState.update {
+        _gameState.update {
             it.copy(
                 playingMillis = 0,
                 playing = true
@@ -882,22 +900,76 @@ class NQueensViewModel @AssistedInject constructor(
         timerJob = viewModelScope.launch(Dispatchers.IO) {
             while(true) {
                 delay(1000)
-                _boardState.update {
+                _gameState.update {
                     it.copy(
-                        playingMillis = it.playingMillis + 1000
+                        playingMillis = it.playingMillis + 1000,
+                        prevMillis = 0
                     )
                 }
             }
         }
     }
 
-    fun stopTimer() {
+    private fun updateBestTime() {
+        var prevMillis = 0L
+        gameState.value.bestTimes.times[boardState.value.size]?.let {
+            if (gameState.value.playingMillis >= it) {
+                return
+            }
+
+            prevMillis = it
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            val bestTimes = gameState.value.bestTimes
+            appDataStore.setBestTimes(
+                bestTimes.copy(
+                    times = bestTimes.times.toMutableMap().apply {
+                        this[boardState.value.size] = gameState.value.playingMillis
+                    }
+                )
+            )
+        }
+
+        _gameState.update {
+            it.copy(
+                prevMillis = prevMillis
+            )
+        }
+    }
+
+    private fun stopTimer() {
         timerJob?.cancel()
 
-        _boardState.update {
+        _gameState.update {
             it.copy(playing = false)
         }
     }
+
+    private fun setupDataStore() {
+        viewModelScope.launch(Dispatchers.IO) {
+            appDataStore.boardSize.collect {
+                if (boardState.value.size != it) {
+                    onUpdateSize(it, false)
+                }
+            }
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            appDataStore.showMoves.collect {
+                onUpdateShowMoves(it, false)
+            }
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            appDataStore.bestTimes.collect { times ->
+                _gameState.update {
+                    it.copy(bestTimes = times)
+                }
+            }
+        }
+    }
+
 
     companion object {
         const val GRAVITY_PER_SECOND = 2000
@@ -914,16 +986,12 @@ class NQueensViewModel @AssistedInject constructor(
                 size = size,
                 queens = List(size) { NQueen(index = it) },
                 availableQueens = size,
-                board = NQueensBoard(Array(size) { row ->
+                board = Board(Array(size) { row ->
                     Array(size) { col ->
                         Square(row = row, col = col, light = Square.isLight(row, col))
                     }
                 }),
-                paths = Array(size) {
-                    Array(size) {
-                        emptyList()
-                    }
-                }
+                paths = Paths.getPaths(size)
             )
         }
     }

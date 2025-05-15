@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -26,49 +28,25 @@ import com.instantiasoft.nqueens.data.model.NQueen
 import kotlin.math.roundToInt
 
 @Composable
-fun QueenToken(
-    boardState: NQueensViewModel.BoardState,
-    boardActions: NQueensViewModel.BoardActions,
-    nQueen: NQueen,
-    index: Int
+fun DoneToken(
+    boardState: NQueensViewModel.BoardState
 ) {
     Box(
         modifier = Modifier
-            .offset {
-                IntOffset(nQueen.x.roundToInt(), nQueen.y.roundToInt())
-            }.padding(2.dp)
+            .padding(2.dp)
             .clip(
                 CircleShape
             ).size(boardState.squareSizeDp.dp)
             .background(
-                color = nQueen.square?.let { square ->
-                    Color.Red.takeIf { (boardState.collisionMap[Collision(square.row, square.col)]?.count() ?: 0) > 0 } ?:
-                    Color(0xff00aa55)
-                } ?: Color(0xff96836b), CircleShape
+                color = Color(0xff00aa55)
             )
             .padding(1.5.dp)
-            .border(2.dp, Color.White, CircleShape)
-            .pointerInput(boardState) {
-                detectTapGestures {
-                    nQueen.square?.let {
-                        boardActions.onReturnQueen(nQueen)
-                    }
-                }
-            }.pointerInput(Unit) {
-                detectDragGestures(
-                    onDragEnd = {
-                        boardActions.onDragEnd(index)
-                    }
-                ) { change, dragAmount ->
-                    change.consume()
-                    boardActions.onDrag(index, dragAmount)
-                }
-            },
+            .border(2.dp, Color.White, CircleShape),
         contentAlignment = Alignment.Center
     ) {
         Icon(
-            painter = painterResource(R.drawable.crown),
-            contentDescription = "Queen",
+            imageVector = Icons.Outlined.Check,
+            contentDescription = "Done",
             modifier = Modifier.padding(4.dp).fillMaxSize(),
             tint = Color.White
         )

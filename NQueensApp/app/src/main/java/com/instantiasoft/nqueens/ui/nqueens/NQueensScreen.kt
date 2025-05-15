@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -68,14 +67,12 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NQueensScreen(
-    size: Int,
-    queensViewModel: NQueensViewModel = hiltViewModel<NQueensViewModel, NQueensViewModel.NQueensViewModelFactory> { factory ->
-        factory.create(size)
-    }
+    queensViewModel: NQueensViewModel = hiltViewModel()
 ) {
     val config = LocalConfiguration.current
     val coroutineScope = rememberCoroutineScope()
 
+    val gameState by queensViewModel.gameState.collectAsStateWithLifecycle()
     val boardState by queensViewModel.boardState.collectAsStateWithLifecycle()
     val boardActions by queensViewModel.boardActions.collectAsStateWithLifecycle()
     val padding = 16
@@ -88,6 +85,7 @@ fun NQueensScreen(
     }
 
     NQueensScreen(
+        gameState = gameState,
         boardState = boardState,
         boardActions = boardActions,
         onSettings = {
@@ -118,6 +116,7 @@ fun NQueensScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NQueensScreen(
+    gameState: NQueensViewModel.GameState,
     boardState: NQueensViewModel.BoardState,
     boardActions: NQueensViewModel.BoardActions,
     onSettings: () -> Unit
@@ -196,24 +195,46 @@ fun NQueensScreen(
                     .fillMaxWidth(),
                     contentAlignment = Alignment.Center) {
                     androidx.compose.animation.AnimatedVisibility(
-                        visible = boardState.playing,
+                        visible = gameState.playing,
                         enter = fadeIn(),
                         exit = fadeOut()
                     ) {
-                        Box(modifier = Modifier
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(Color.Black)
-                            .widthIn(min = 120.dp)
-                            .padding(horizontal = 20.dp, vertical = 16.dp),
-                            contentAlignment = Alignment.Center
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Text(
-                                text = "${(boardState.playingMillis / 1000)}",
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                textAlign = TextAlign.Center,
-                                fontSize = 40.sp
-                            )
+                            Box(
+                                Modifier.heightIn(24.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                gameState.bestTimes.times[boardState.size]?.let {
+                                    Text(
+                                        text = "BEST: ${(it / 1000)}",
+                                        color = Color.Black,
+                                        fontWeight = FontWeight.Medium,
+                                        textAlign = TextAlign.Center,
+                                        fontSize = 16.sp
+                                    )
+                                }
+                            }
+
+                            Spacer(Modifier.height(4.dp))
+
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(Color.Black)
+                                    .widthIn(min = 120.dp)
+                                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "${(gameState.playingMillis / 1000)}",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    textAlign = TextAlign.Center,
+                                    fontSize = 40.sp
+                                )
+                            }
                         }
                     }
                 }
@@ -255,14 +276,16 @@ fun NQueensScreen(
                                         },
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    val paths = boardState.paths[row][col]
-                                    paths.forEach { move ->
-                                        if (boardState.showMoves || move.collision) {
-                                            MoveIcon(
-                                                square = square,
-                                                move = move,
-                                                multiple = paths.size > 1
-                                            )
+                                    boardState.paths.getSquarePath(row, col)?.let { paths ->
+                                        paths.forEach { move ->
+                                            if (boardState.showMoves || move.collision) {
+                                                MoveIcon(
+                                                    dragIndex = boardState.dragIndex,
+                                                    square = square,
+                                                    move = move,
+                                                    multipleMovesForSquare = paths.size > 1
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -304,6 +327,10 @@ fun NQueensScreen(
                                     boardState, boardActions, nQueen, index
                                 )
                             }
+
+                            if (gameState.complete) {
+                                DoneToken(boardState)
+                            }
                         }
 
                         Spacer(modifier = Modifier.width(16.dp))
@@ -325,19 +352,19 @@ fun NQueensScreen(
             }
 
             androidx.compose.animation.AnimatedVisibility(
-                visible = boardState.complete || !boardState.playing,
+                visible = gameState.complete || !gameState.playing,
                 enter = fadeIn(),
                 exit = fadeOut()
             ) {
                 Box(Modifier
                     .fillMaxSize()
-                    .background(Color(if (boardState.complete) 0x44000000 else 0x11000000))
+                    .background(Color(if (gameState.complete) 0x44000000 else 0x11000000))
                     .onGloballyPositioned {
                         tapOrigin = it.positionInWindow()
                     }
-                    .pointerInput(boardState) {
+                    .pointerInput(gameState) {
                         detectTapGestures { offset ->
-                            if (boardState.complete) {
+                            if (gameState.complete) {
                                 boardActions.onAddFirework(offset + tapOrigin - rocketOrigin)
                             } else {
                                 boardActions.onRestart()
@@ -345,7 +372,7 @@ fun NQueensScreen(
                         }
                     }
                 ) {
-                    if (!boardState.complete) {
+                    if (!gameState.complete) {
                         Box(
                             modifier = Modifier
                                 .padding(top = 32.dp)
@@ -369,11 +396,12 @@ fun NQueensScreen(
             }
 
             androidx.compose.animation.AnimatedVisibility(
-                visible = boardState.complete,
+                visible = gameState.complete,
                 enter = slideInVertically { -it*2 },
                 exit = slideOutVertically { -it*2 }
             ) {
                 SuccessPanel(
+                    gameState = gameState,
                     boardState = boardState,
                     boardActions = boardActions,
                     contentColor = Color.White,
@@ -402,6 +430,7 @@ fun NQueensScreen(
 
 @Composable
 fun SuccessPanel(
+    gameState: NQueensViewModel.GameState,
     boardState: NQueensViewModel.BoardState,
     boardActions: NQueensViewModel.BoardActions,
     contentColor: Color,
@@ -443,11 +472,22 @@ fun SuccessPanel(
             Spacer(Modifier.height(8.dp))
 
             Text(
-                text = "${boardState.playingMillis/1000} seconds",
+                text = "${gameState.playingMillis/1000} seconds.",
                 color = contentColor,
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold
             )
+
+            if (gameState.prevMillis > 0) {
+                Spacer(Modifier.height(24.dp))
+
+                Text(
+                    text = "The new BEST TIME!",
+                    color = contentColor,
+                    fontSize = 32.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
 
             Spacer(Modifier.height(24.dp))
 
@@ -465,6 +505,7 @@ fun SuccessPanel(
 @Composable
 fun NQueensScreenPreview() {
     NQueensScreen(
+        gameState = NQueensViewModel.GameState(),
         boardState = NQueensViewModel.updateSize(8).copy(squareSizeDp = 40),
         boardActions = NQueensViewModel.BoardActions(
             {},{_,_->},{},{_,_->},{},{},{},{},{},{}

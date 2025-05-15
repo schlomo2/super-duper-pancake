@@ -18,9 +18,10 @@ import com.instantiasoft.nqueens.data.model.Square
 
 @Composable
 fun MoveIcon(
+    dragIndex: Int?,
     square: Square,
     move: Move,
-    multiple: Boolean
+    multipleMovesForSquare: Boolean
 ) {
     val density = LocalDensity.current
     val imageRotation = when(move.direction) {
@@ -36,18 +37,19 @@ fun MoveIcon(
 
     if (move.collision) {
         Icon(
-            painter = painterResource(if (multiple) R.drawable.circle else R.drawable.arrow_right),
+            painter = painterResource(if (multipleMovesForSquare) R.drawable.circle else R.drawable.arrow_right),
             contentDescription = move.direction.name,
-            modifier = Modifier.size(if (multiple) 12.dp else 24.dp).rotate(imageRotation),
+            modifier = Modifier.size(if (multipleMovesForSquare) 12.dp else 24.dp).rotate(imageRotation),
             tint = Color.Red
         )
     }
 
+    val forDraggedPiece = (dragIndex ?: -1) == move.pieceIndex
     Icon(
         painter = painterResource(R.drawable.arrow_right),
         contentDescription = move.direction.name,
         modifier = Modifier.rotate(imageRotation)
             .offset(x = with(density) { (square.size.width * -0.33f).toDp() }),
-        tint = if (move.collision) Color.Red else Color.Black
+        tint = if (move.collision || (forDraggedPiece && multipleMovesForSquare)) Color.Red else if (forDraggedPiece) Color.Green else Color.Black
     )
 }
