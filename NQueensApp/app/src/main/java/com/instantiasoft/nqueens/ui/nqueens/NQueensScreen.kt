@@ -50,7 +50,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
@@ -69,7 +70,8 @@ import kotlinx.coroutines.launch
 fun NQueensScreen(
     queensViewModel: NQueensViewModel = hiltViewModel()
 ) {
-    val config = LocalConfiguration.current
+    val density = LocalDensity.current
+    val windowInfo = LocalWindowInfo.current
     val coroutineScope = rememberCoroutineScope()
 
     val gameState by queensViewModel.gameState.collectAsStateWithLifecycle()
@@ -80,7 +82,10 @@ fun NQueensScreen(
 
     LaunchedEffect(boardState) {
         if (boardState.needsSetup) {
-            queensViewModel.setup(config.screenWidthDp-padding*2, config.screenHeightDp-padding*2)
+            queensViewModel.setup(
+                with(density) { (windowInfo.containerSize.width - padding * 2).toDp() }.value.toInt(),
+                with(density) { (windowInfo.containerSize.height - padding * 2).toDp() }.value.toInt()
+            )
         }
     }
 
