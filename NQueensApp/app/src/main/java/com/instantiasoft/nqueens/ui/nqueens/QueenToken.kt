@@ -27,8 +27,9 @@ import kotlin.math.roundToInt
 
 @Composable
 fun QueenToken(
+    gameState: NQueensViewModel.GameState,
     boardState: NQueensViewModel.BoardState,
-    boardActions: NQueensViewModel.BoardActions,
+    boardActions: NQueensViewModel.GameActions,
     nQueen: NQueen,
     index: Int
 ) {
@@ -42,7 +43,7 @@ fun QueenToken(
             ).size(boardState.squareSizeDp.dp)
             .background(
                 color = nQueen.square?.let { square ->
-                    Color.Red.takeIf { (boardState.collisionMap[Collision(square.row, square.col)]?.count() ?: 0) > 0 } ?:
+                    Color.Red.takeIf { (gameState.collisionMap[Collision(square.row, square.col)]?.count() ?: 0) > 0 } ?:
                     Color(0xff00aa55)
                 } ?: Color(0xff96836b), CircleShape
             )

@@ -1,5 +1,6 @@
 package com.instantiasoft.nqueens.ui.nqueens
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -60,7 +61,9 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.instantiasoft.nqueens.data.model.Board
 import com.instantiasoft.nqueens.data.model.ProjectileType
+import com.instantiasoft.nqueens.data.model.Square
 import com.instantiasoft.nqueens.ui.fireworks.Firework
 import com.instantiasoft.nqueens.ui.fireworks.Rocket
 import kotlinx.coroutines.launch
@@ -75,8 +78,10 @@ fun NQueensScreen(
     val coroutineScope = rememberCoroutineScope()
 
     val gameState by queensViewModel.gameState.collectAsStateWithLifecycle()
+    val playState by queensViewModel.playState.collectAsStateWithLifecycle()
     val boardState by queensViewModel.boardState.collectAsStateWithLifecycle()
-    val boardActions by queensViewModel.boardActions.collectAsStateWithLifecycle()
+    val gameActions by queensViewModel.gameActions.collectAsStateWithLifecycle()
+    val animationsState by queensViewModel.animationsState.collectAsStateWithLifecycle()
     val padding = 16
     val settingsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -91,8 +96,10 @@ fun NQueensScreen(
 
     NQueensScreen(
         gameState = gameState,
+        playState = playState,
         boardState = boardState,
-        boardActions = boardActions,
+        boardActions = gameActions,
+        animationsState = animationsState,
         onSettings = {
             coroutineScope.launch {
                 settingsSheetState.show()
@@ -102,8 +109,9 @@ fun NQueensScreen(
 
     if (settingsSheetState.isVisible) {
         SettingsSheet(
+            gameState = gameState,
             boardState = boardState,
-            boardActions = boardActions,
+            boardActions = gameActions,
             sheetState = settingsSheetState,
             onDismissRequest = {
                 coroutineScope.launch {
@@ -122,8 +130,10 @@ fun NQueensScreen(
 @Composable
 fun NQueensScreen(
     gameState: NQueensViewModel.GameState,
+    playState: NQueensViewModel.PlayState,
     boardState: NQueensViewModel.BoardState,
-    boardActions: NQueensViewModel.BoardActions,
+    boardActions: NQueensViewModel.GameActions,
+    animationsState: NQueensViewModel.AnimationsState,
     onSettings: () -> Unit
 ) {
 
@@ -200,7 +210,7 @@ fun NQueensScreen(
                     .fillMaxWidth(),
                     contentAlignment = Alignment.Center) {
                     androidx.compose.animation.AnimatedVisibility(
-                        visible = gameState.playing,
+                        visible = playState.playing,
                         enter = fadeIn(),
                         exit = fadeOut()
                     ) {
@@ -211,7 +221,7 @@ fun NQueensScreen(
                                 Modifier.heightIn(24.dp),
                                 contentAlignment = Alignment.Center
                             ) {
-                                gameState.bestTimes.times[boardState.size]?.let {
+                                playState.bestTimes.times[boardState.size]?.let {
                                     Text(
                                         text = "BEST: ${(it / 1000)}",
                                         color = Color.Black,
@@ -233,7 +243,7 @@ fun NQueensScreen(
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    text = "${(gameState.playingMillis / 1000)}",
+                                    text = "${(playState.playingMillis / 1000)}",
                                     color = Color.White,
                                     fontWeight = FontWeight.Bold,
                                     textAlign = TextAlign.Center,
@@ -243,14 +253,25 @@ fun NQueensScreen(
                         }
                     }
                 }
-                Text(
-                    text = "Place all of the queens on the board without threatening each other",
-                    modifier = Modifier.padding(horizontal = 32.dp, vertical = 32.dp),
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.Black,
-                    textAlign = TextAlign.Center
-                )
+
+                Box(
+                    modifier = Modifier.heightIn(min = 120.dp)
+                ) {
+                    androidx.compose.animation.AnimatedVisibility(
+                        playState.playing,
+                        enter = fadeIn(),
+                        exit = fadeOut()
+                    ) {
+                        Text(
+                            text = "Place all of the queens on the board without threatening each other",
+                            modifier = Modifier.padding(horizontal = 32.dp, vertical = 32.dp),
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.Black,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
 
                 Column(
                     Modifier
@@ -266,7 +287,7 @@ fun NQueensScreen(
                                         .size(boardState.squareSizeDp.dp)
                                         .background(
                                             when {
-                                                boardState.overSquare == square -> overColor
+                                                gameState.overSquare == square -> overColor
                                                 square.light -> lightColor
                                                 else -> darkColor
                                             }
@@ -281,11 +302,11 @@ fun NQueensScreen(
                                         },
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    boardState.paths.getSquarePath(row, col)?.let { paths ->
+                                    gameState.paths.getSquarePath(row, col)?.let { paths ->
                                         paths.forEach { move ->
-                                            if (boardState.showMoves || move.collision) {
+                                            if (gameState.showMoves || move.collision) {
                                                 MoveIcon(
-                                                    dragIndex = boardState.dragIndex,
+                                                    dragIndex = gameState.dragIndex,
                                                     square = square,
                                                     move = move,
                                                     multipleMovesForSquare = paths.size > 1
@@ -327,13 +348,13 @@ fun NQueensScreen(
                                 },
                             contentAlignment = Alignment.Center
                         ) {
-                            boardState.queens.forEachIndexed { index, nQueen ->
+                            gameState.queens.forEachIndexed { index, nQueen ->
                                 QueenToken(
-                                    boardState, boardActions, nQueen, index
+                                    gameState, boardState, boardActions, nQueen, index
                                 )
                             }
 
-                            if (gameState.complete) {
+                            if (playState.complete) {
                                 DoneToken(boardState)
                             }
                         }
@@ -341,7 +362,7 @@ fun NQueensScreen(
                         Spacer(modifier = Modifier.width(16.dp))
 
                         Text(
-                            text = boardState.availableQueens.toString(),
+                            text = gameState.availableQueens.toString(),
                             fontSize = 32.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color.Black,
@@ -357,19 +378,19 @@ fun NQueensScreen(
             }
 
             androidx.compose.animation.AnimatedVisibility(
-                visible = gameState.complete || !gameState.playing,
+                visible = playState.complete || !playState.playing,
                 enter = fadeIn(),
                 exit = fadeOut()
             ) {
                 Box(Modifier
                     .fillMaxSize()
-                    .background(Color(if (gameState.complete) 0x44000000 else 0x11000000))
+                    .background(Color(0x88000000))
                     .onGloballyPositioned {
                         tapOrigin = it.positionInWindow()
                     }
-                    .pointerInput(gameState) {
+                    .pointerInput(playState) {
                         detectTapGestures { offset ->
-                            if (gameState.complete) {
+                            if (playState.complete) {
                                 boardActions.onAddFirework(offset + tapOrigin - rocketOrigin)
                             } else {
                                 boardActions.onRestart()
@@ -377,38 +398,50 @@ fun NQueensScreen(
                         }
                     }
                 ) {
-                    if (!gameState.complete) {
-                        Box(
-                            modifier = Modifier
-                                .padding(top = 32.dp)
-                                .clip(RoundedCornerShape(16.dp))
-                                .border(10.dp, Color.White, RoundedCornerShape(16.dp))
-                                .background(color = darkColor)
-                                .padding(horizontal = 32.dp, vertical = 32.dp)
-                                .align(Alignment.TopCenter),
-                            contentAlignment = Alignment.Center
+                    if (!playState.complete) {
+                        Column(
+                            modifier = Modifier.align(Alignment.TopCenter),
+                            horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Text(
-                                text = "Tap to start",
-                                color = Color.White,
-                                fontSize = 32.sp,
+                                text = "Place all of the queens on the board without threatening each other",
+                                modifier = Modifier.padding(horizontal = 32.dp, vertical = 32.dp),
+                                fontSize = 20.sp,
                                 fontWeight = FontWeight.Bold,
-                                textAlign = TextAlign.Center,
+                                color = Color.White,
+                                textAlign = TextAlign.Center
                             )
+
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .border(10.dp, Color.White, RoundedCornerShape(16.dp))
+                                    .background(color = darkColor)
+                                    .padding(horizontal = 32.dp, vertical = 32.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "Tap to start",
+                                    color = Color.White,
+                                    fontSize = 32.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    textAlign = TextAlign.Center,
+                                )
+                            }
                         }
                     }
                 }
             }
 
             androidx.compose.animation.AnimatedVisibility(
-                visible = gameState.complete,
+                visible = playState.complete,
                 enter = slideInVertically { -it*2 },
                 exit = slideOutVertically { -it*2 }
             ) {
                 SuccessPanel(
-                    gameState = gameState,
+                    playState = playState,
                     boardState = boardState,
-                    boardActions = boardActions,
+                    gameActions = boardActions,
                     contentColor = Color.White,
                     backgroundColor = darkColor
                 )
@@ -421,7 +454,7 @@ fun NQueensScreen(
                         rocketOrigin = it.positionInWindow()
                     }
             ) {
-                boardState.projectileUpdateList.forEach {
+                animationsState.projectileUpdateList.forEach {
                     when(it.type) {
                         ProjectileType.Rocket -> Rocket(it)
                         ProjectileType.Firework -> Firework(it)
@@ -435,9 +468,9 @@ fun NQueensScreen(
 
 @Composable
 fun SuccessPanel(
-    gameState: NQueensViewModel.GameState,
+    playState: NQueensViewModel.PlayState,
     boardState: NQueensViewModel.BoardState,
-    boardActions: NQueensViewModel.BoardActions,
+    gameActions: NQueensViewModel.GameActions,
     contentColor: Color,
     backgroundColor: Color
 ) {
@@ -445,7 +478,7 @@ fun SuccessPanel(
         .fillMaxWidth()
         .padding(horizontal = 16.dp, vertical = 32.dp)
         .clickable {
-            boardActions.onRestart()
+            gameActions.onRestart()
         },
         contentAlignment = Alignment.Center
     ) {
@@ -477,13 +510,13 @@ fun SuccessPanel(
             Spacer(Modifier.height(8.dp))
 
             Text(
-                text = "${gameState.playingMillis/1000} seconds.",
+                text = "${playState.playingMillis/1000} seconds.",
                 color = contentColor,
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold
             )
 
-            if (gameState.prevMillis > 0) {
+            if (playState.prevMillis > 0) {
                 Spacer(Modifier.height(24.dp))
 
                 Text(
@@ -511,10 +544,18 @@ fun SuccessPanel(
 fun NQueensScreenPreview() {
     NQueensScreen(
         gameState = NQueensViewModel.GameState(),
-        boardState = NQueensViewModel.updateSize(8).copy(squareSizeDp = 40),
-        boardActions = NQueensViewModel.BoardActions(
+        playState = NQueensViewModel.PlayState(),
+        boardState = NQueensViewModel.BoardState(size = 8, squareSizeDp = 40, board = Board(
+            Array(8) { row ->
+                Array(8) { col ->
+                    Square(row = row, col = col, light = Square.isLight(row, col))
+                }
+            }
+        )),
+        boardActions = NQueensViewModel.GameActions(
             {},{_,_->},{},{_,_->},{},{},{},{},{},{}
         ),
+        animationsState = NQueensViewModel.AnimationsState(),
         onSettings = {}
     )
 }

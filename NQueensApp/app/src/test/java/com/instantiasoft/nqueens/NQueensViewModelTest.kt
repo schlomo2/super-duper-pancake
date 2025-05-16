@@ -73,19 +73,19 @@ class NQueensViewModelTest {
         sut.onAddQueen(boardState.board.square(0, 2)!!)
         assertEquals(0, sut.boardState.value.board.square(0, 2)?.pieceIndex)
 
-        assertFalse(sut.boardState.value.calculatePaths)
+        assertFalse(sut.gameState.value.calculatePaths)
         sut.updateAnimations()
 
         advanceUntilIdle()
 
-        assertTrue(sut.boardState.value.calculatePaths)
+        assertTrue(sut.gameState.value.calculatePaths)
 
         sut.updateAnimations()
 
         advanceUntilIdle()
 
-        assertEquals(0, sut.boardState.value.collisionMap.count())
-        assertEquals(true, sut.gameState.value.complete)
+        assertEquals(0, sut.gameState.value.collisionMap.count())
+        assertEquals(true, sut.playState.value.complete)
     }
 
     @Test
@@ -103,17 +103,17 @@ class NQueensViewModelTest {
         sut.onAddQueen(boardState.board.square(2, 0)!!)
         assertEquals(2, sut.boardState.value.board.square(2, 0)?.pieceIndex)
 
-        assertFalse(sut.boardState.value.calculatePaths)
+        assertFalse(sut.gameState.value.calculatePaths)
         sut.updateAnimations()
 
         advanceUntilIdle()
 
-        assertTrue(sut.boardState.value.calculatePaths)
+        assertTrue(sut.gameState.value.calculatePaths)
 
         sut.updateAnimations()
 
         advanceUntilIdle()
 
-        assertEquals(2, sut.boardState.value.collisionMap.count())
+        assertEquals(2, sut.gameState.value.collisionMap.count())
     }
 }

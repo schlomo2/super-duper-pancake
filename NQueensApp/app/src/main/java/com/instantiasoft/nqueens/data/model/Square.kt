@@ -10,7 +10,7 @@ data class Square(
     val pieceIndex: Int? = null,
     val active: Boolean = false,
     val position: Offset = Offset(0f,0f),
-    val size: IntSize = IntSize(0, 0)
+    val size: IntSize = IntSize(10, 10)
 ) {
     fun sameBoardPosition(square: Square?): Boolean {
         return row == square?.row && col == square.col

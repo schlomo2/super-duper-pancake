@@ -16,7 +16,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -29,8 +28,9 @@ import kotlin.math.roundToInt
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsSheet(
+    gameState: NQueensViewModel.GameState,
     boardState: NQueensViewModel.BoardState,
-    boardActions: NQueensViewModel.BoardActions,
+    boardActions: NQueensViewModel.GameActions,
     sheetState: SheetState,
     onDismissRequest: () -> Unit
 ) {
@@ -88,7 +88,7 @@ fun SettingsSheet(
                 )
 
                 Switch(
-                    checked = boardState.showMoves,
+                    checked = gameState.showMoves,
                     onCheckedChange = {
                         boardActions.onUpdateShowMoves(it)
                     }

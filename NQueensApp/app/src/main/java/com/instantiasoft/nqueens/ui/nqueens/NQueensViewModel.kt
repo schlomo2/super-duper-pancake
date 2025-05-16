@@ -47,7 +47,7 @@ class NQueensViewModel @Inject constructor(
         val square: Square? = null
     )
 
-    data class GameState(
+    data class PlayState(
         val complete: Boolean = false,
         val playingMillis: Long = 0,
         val prevMillis: Long = 0,
@@ -55,32 +55,39 @@ class NQueensViewModel @Inject constructor(
         val bestTimes: BestTimes = BestTimes()
     )
 
-    private val _gameState = MutableStateFlow(GameState())
-    val gameState = _gameState.asStateFlow()
+    private val _playState = MutableStateFlow(PlayState())
+    val playState = _playState.asStateFlow()
 
     data class BoardState(
         val setupSize: Int = 0,
         val size: Int = 0,
-        val queens: List<NQueen> = emptyList(),
         val board: Board = Board(),
-        val paths: Paths = Paths(),
-        val collisionMap: Map<Collision, List<MoveDirection>> = emptyMap(),
-        val queenUpdateMap: Map<Int, OffsetState> = emptyMap(),
-        val projectileUpdateList: List<Projectile> = emptyList(),
-        val squareSize: Int = 0,
-        val squareSizeDp: Int = 0,
-        val dragOrigin: Offset = Offset.Zero,
-        val overSquare: Square? = null,
-        val moveQueenIndex: Int? = null,
-        val dragIndex: Int? = null,
-        val calculatePaths: Boolean = false,
-        val availableQueens: Int = 0,
-        val showMoves: Boolean = false
+        val squareSizePx: Int = 0,
+        val squareSizeDp: Int = 0
     ) {
         val needsSetup: Boolean get() = setupSize != size
     }
 
-    data class BoardActions(
+    private val _boardState = MutableStateFlow(BoardState())
+    val boardState = _boardState.asStateFlow()
+
+    data class GameState(
+        val queens: List<NQueen> = emptyList(),
+        val paths: Paths = Paths(),
+        val collisionMap: Map<Collision, List<MoveDirection>> = emptyMap(),
+        val overSquare: Square? = null,
+        val moveQueenIndex: Int? = null,
+        val dragOrigin: Offset = Offset.Zero,
+        val dragIndex: Int? = null,
+        val calculatePaths: Boolean = false,
+        val availableQueens: Int = 0,
+        val showMoves: Boolean = false
+    )
+
+    private val _gameState = MutableStateFlow(GameState())
+    val gameState = _gameState.asStateFlow()
+
+    data class GameActions(
         val onDragOriginPositioned: (LayoutCoordinates) -> Unit,
         val onDrag: (index: Int, offset: Offset) -> Unit,
         val onDragEnd: (index: Int) -> Unit,
@@ -93,11 +100,8 @@ class NQueensViewModel @Inject constructor(
         val onReturnQueen: (NQueen) -> Unit
     )
 
-    private val _boardState = MutableStateFlow(BoardState())
-    val boardState = _boardState.asStateFlow()
-
-    private val _boardActions = MutableStateFlow(
-        BoardActions(
+    private val _gameActions = MutableStateFlow(
+        GameActions(
             onDragOriginPositioned = ::onDragOriginPositioned,
             onDrag = ::onDrag,
             onDragEnd = ::onDragEnd,
@@ -110,7 +114,15 @@ class NQueensViewModel @Inject constructor(
             onReturnQueen = ::onReturnQueen
         )
     )
-    val boardActions = _boardActions.asStateFlow()
+    val gameActions = _gameActions.asStateFlow()
+
+    data class AnimationsState(
+        val queenUpdateMap: Map<Int, OffsetState> = emptyMap(),
+        val projectileUpdateList: List<Projectile> = emptyList()
+    )
+
+    private val _animationsState = MutableStateFlow(AnimationsState())
+    val animationsState = _animationsState.asStateFlow()
 
     private var timerJob: Job? = null
 
@@ -138,8 +150,8 @@ class NQueensViewModel @Inject constructor(
 
     fun onDragOriginPositioned(layout: LayoutCoordinates) {
         val offset = layout.positionInWindow()
-        if (offset == boardState.value.dragOrigin) return
-        _boardState.update {
+        if (offset == gameState.value.dragOrigin) return
+        _gameState.update {
             it.copy(
                 dragOrigin = offset
             )
@@ -160,7 +172,7 @@ class NQueensViewModel @Inject constructor(
         _boardState.update {
             it.copy(
                 board = boardState.value.board.updateSquare(updatedSquare),
-                squareSize = layout.size.width
+                squareSizePx = layout.size.width
             )
         }
     }
@@ -170,7 +182,7 @@ class NQueensViewModel @Inject constructor(
         src: Offset,
         dst: Offset,
     ) {
-        _boardState.update { state ->
+        _animationsState.update { state ->
             state.copy(
                 queenUpdateMap = state.queenUpdateMap.toMutableMap().apply {
                     this[index] = OffsetState(
@@ -186,17 +198,17 @@ class NQueensViewModel @Inject constructor(
     }
 
     fun onDragEnd(index: Int) {
-        val queen = boardState.value.queens.getOrNull(index) ?: return
+        val queen = gameState.value.queens.getOrNull(index) ?: return
 
-        val overSquare = boardState.value.overSquare
+        val overSquare = gameState.value.overSquare
         val src = Offset(queen.x, queen.y)
         val dst = overSquare?.takeIf { it.pieceIndex == queen.index }?.let {
-            it.position - boardState.value.dragOrigin
+            it.position - gameState.value.dragOrigin
         } ?: Offset(0f, 0f)
 
         addQueenAnimation(index, src, dst)
 
-        _boardState.update { state ->
+        _gameState.update { state ->
             state.copy(
                 overSquare = null,
                 moveQueenIndex = null,
@@ -206,7 +218,7 @@ class NQueensViewModel @Inject constructor(
     }
 
     fun onDrag(index: Int, offset: Offset) {
-        val state = boardState.value
+        val state = gameState.value
 
         val queen = state.queens.getOrNull(index)?.let {
             it.copy(
@@ -215,7 +227,7 @@ class NQueensViewModel @Inject constructor(
             )
         } ?: return
 
-        _boardState.update {
+        _gameState.update {
             it.copy(
                 queens = it.queens.toMutableList().apply {
                     this[index] = queen
@@ -227,24 +239,28 @@ class NQueensViewModel @Inject constructor(
     }
 
     private fun moveQueen(index: Int) {
-        val queen = boardState.value.queens.getOrNull(index) ?: return
+        val queen = gameState.value.queens.getOrNull(index) ?: return
 
-        val state = boardState.value
-        val board = state.board
+        val board = boardState.value.board
 
         // used the center of the dragged item to determine which square is covered
-        val dragPosX = state.dragOrigin.x + state.squareSize/2 + queen.x
-        val dragPosY = state.dragOrigin.y + state.squareSize/2 + queen.y
+        val dragPosX = gameState.value.dragOrigin.x + boardState.value.squareSizePx/2 + queen.x
+        val dragPosY = gameState.value.dragOrigin.y + boardState.value.squareSizePx/2 + queen.y
 
         val updateSquares = mutableListOf<Square>()
 
         val overSquare = board.overSquare(dragPosX, dragPosY)
 
-        state.overSquare?.takeIf { !it.sameBoardPosition(overSquare) && it.pieceIndex == index }?.let {
+        gameState.value.overSquare?.takeIf { !it.sameBoardPosition(overSquare) && it.pieceIndex == index }?.let {
             updateSquares.add(it.copy(pieceIndex = null))
         }
 
-        _boardState.update { updateState ->
+        _boardState.update {
+            it.copy(
+                board = if (updateSquares.size > 0) board.updateSquares(updateSquares) else it.board,
+            )
+        }
+        _gameState.update { updateState ->
             updateState.copy(
                 overSquare = overSquare?.takeIf { updateState.dragIndex != null }?.let {
                     if (it.pieceIndex == null) {
@@ -265,7 +281,6 @@ class NQueensViewModel @Inject constructor(
                     }
                 },
                 moveQueenIndex = null,
-                board = if (updateSquares.size > 0) board.updateSquares(updateSquares) else updateState.board,
                 calculatePaths = true
             )
         }
@@ -273,14 +288,12 @@ class NQueensViewModel @Inject constructor(
 
     private fun calculatePaths() {
         viewModelScope.launch(dispatcher) {
-            val state = boardState.value
-
-            val board = state.board
-            val paths = Paths.getPathArray(state.size)
+            val board = boardState.value.board
+            val paths = Paths.getPathArray(boardState.value.size)
 
             val collisions = mutableMapOf<Collision, List<MoveDirection>>()
 
-            state.queens.forEach { queen ->
+            gameState.value.queens.forEach { queen ->
                 val square = queen.square?.copy(pieceIndex = queen.index) ?: return@forEach
 
                 checkWest(board, paths, square, collisions)
@@ -293,11 +306,11 @@ class NQueensViewModel @Inject constructor(
                 checkSouthWest(board, paths, square, collisions)
             }
 
-            val availableQueens = state.queens.filter {
-                it.index != state.dragIndex && it.square == null
+            val availableQueens = gameState.value.queens.filter {
+                it.index != gameState.value.dragIndex && it.square == null
             }.size
 
-            _boardState.update { updateState ->
+            _gameState.update { updateState ->
                 updateState.copy(
                     paths = Paths(paths),
                     collisionMap = collisions,
@@ -306,8 +319,8 @@ class NQueensViewModel @Inject constructor(
                 )
             }
 
-            if (!gameState.value.complete && collisions.isEmpty() && availableQueens == 0 && state.dragIndex == null) {
-                _gameState.update {
+            if (!playState.value.complete && collisions.isEmpty() && availableQueens == 0 && gameState.value.dragIndex == null) {
+                _playState.update {
                     it.copy(
                         complete = true
                     )
@@ -630,10 +643,10 @@ class NQueensViewModel @Inject constructor(
     }
 
     fun updateAnimations() {
-        if (boardState.value.calculatePaths)
+        if (gameState.value.calculatePaths)
             calculatePaths()
 
-        boardState.value.moveQueenIndex?.let {
+        gameState.value.moveQueenIndex?.let {
             moveQueen(it)
         }
 
@@ -642,12 +655,12 @@ class NQueensViewModel @Inject constructor(
     }
 
     private fun updateQueens() {
-        if (boardState.value.queenUpdateMap.isEmpty()) return
+        if (animationsState.value.queenUpdateMap.isEmpty()) return
 
         val millis = System.currentTimeMillis()
 
-        val updateMap = boardState.value.queenUpdateMap.toMutableMap()
-        val queens = boardState.value.queens.toMutableList()
+        val updateMap = animationsState.value.queenUpdateMap.toMutableMap()
+        val queens = gameState.value.queens.toMutableList()
         var calculatePaths = false
 
         val iterator = updateMap.keys.toList().listIterator()
@@ -672,23 +685,28 @@ class NQueensViewModel @Inject constructor(
             }
         }
 
-        _boardState.update {
+        _gameState.update {
             it.copy(
                 queens = queens,
-                queenUpdateMap = updateMap,
                 calculatePaths = if (calculatePaths) true else it.calculatePaths
+            )
+        }
+
+        _animationsState.update {
+            it.copy(
+                queenUpdateMap = updateMap,
             )
         }
     }
 
     private fun updateProjectiles() {
-        if (boardState.value.projectileUpdateList.isEmpty()) return
+        if (animationsState.value.projectileUpdateList.isEmpty()) return
 
         val millis = System.currentTimeMillis()
 
         val projectiles = mutableListOf<Projectile>()
 
-        val updateList = boardState.value.projectileUpdateList.toMutableList()
+        val updateList = animationsState.value.projectileUpdateList.toMutableList()
         val iterator = updateList.listIterator()
         while(iterator.hasNext()) {
             val projectile = iterator.next()
@@ -724,7 +742,7 @@ class NQueensViewModel @Inject constructor(
 
         updateList.addAll(projectiles)
 
-        _boardState.update {
+        _animationsState.update {
             it.copy(
                 projectileUpdateList = updateList
             )
@@ -732,7 +750,7 @@ class NQueensViewModel @Inject constructor(
     }
 
     fun onAddFirework(offset: Offset, projectileCount: Int = 50) {
-        _boardState.update {
+        _animationsState.update {
             it.copy(
                 projectileUpdateList = it.projectileUpdateList.plus(
                     addFireworks(
@@ -781,7 +799,7 @@ class NQueensViewModel @Inject constructor(
     private fun onAddRockets(count: Int) {
         viewModelScope.launch(dispatcher) {
             repeat(count) {
-                _boardState.update { state ->
+                _animationsState.update { state ->
                     state.copy(
                         projectileUpdateList = state.projectileUpdateList.toMutableList().apply {
                             this.add(
@@ -813,7 +831,24 @@ class NQueensViewModel @Inject constructor(
         stopTimer()
 
         _boardState.update {
-            updateSize(size)
+            BoardState(
+                size = size,
+                board = Board(
+                    Array(size) { row ->
+                        Array(size) { col ->
+                            Square(row = row, col = col, light = Square.isLight(row, col))
+                        }
+                    }
+                )
+            )
+        }
+
+        _gameState.update {
+            GameState(
+                queens = List(size) { NQueen(index = it) },
+                availableQueens = size,
+                paths = Paths.getPaths(size)
+            )
         }
     }
 
@@ -824,7 +859,7 @@ class NQueensViewModel @Inject constructor(
             }
         }
 
-        _boardState.update {
+        _gameState.update {
             it.copy(
                 showMoves = show
             )
@@ -832,9 +867,9 @@ class NQueensViewModel @Inject constructor(
     }
 
     fun onRestart() {
-        val queens = boardState.value.queens
+        val queens = gameState.value.queens
 
-        _gameState.update {
+        _playState.update {
             it.copy(
                 complete = false,
                 playing = true
@@ -851,21 +886,28 @@ class NQueensViewModel @Inject constructor(
     }
 
     fun onAddQueen(square: Square) {
-        if (square.pieceIndex != null) return
+        val boardSquare = boardState.value.board.square(square.row, square.col) ?: return
+        if (boardSquare.pieceIndex != null) return
 
-        val queen = boardState.value.queens.findLast { it.square == null } ?: return
+        val queen = gameState.value.queens.findLast { it.square == null } ?: return
 
-        _boardState.update { updateState ->
+        val updateSquare = boardSquare.copy(pieceIndex = queen.index)
+        _boardState.update {
+            it.copy(
+                board = it.board.updateSquare(updateSquare)
+            )
+        }
+
+        _gameState.update { updateState ->
             updateState.copy(
                 queens = updateState.queens.toMutableList().apply {
-                    this[queen.index] = queen.copy(square = square)
-                },
-                board = updateState.board.updateSquare(square.copy(pieceIndex = queen.index))
+                    this[queen.index] = queen.copy(square = updateSquare)
+                }
             )
         }
 
         val src = Offset(queen.x, queen.y)
-        val dst = square.position - boardState.value.dragOrigin
+        val dst = square.position - gameState.value.dragOrigin
 
         addQueenAnimation(queen.index, src, dst)
     }
@@ -873,12 +915,16 @@ class NQueensViewModel @Inject constructor(
     fun onReturnQueen(queen: NQueen) {
         val square = queen.square ?: return
 
-        _boardState.update { updateState ->
+        _boardState.update {
+            it.copy(
+                board = it.board.updateSquare(square.row, square.col, null)
+            )
+        }
+        _gameState.update { updateState ->
             updateState.copy(
                 queens = updateState.queens.toMutableList().apply {
                     this[queen.index] = queen.copy(square = null)
-                },
-                board = updateState.board.updateSquare(square.row, square.col, null)
+                }
             )
         }
 
@@ -891,7 +937,7 @@ class NQueensViewModel @Inject constructor(
     private fun resetTimer() {
         timerJob?.cancel()
 
-        _gameState.update {
+        _playState.update {
             it.copy(
                 playingMillis = 0,
                 playing = true
@@ -901,7 +947,7 @@ class NQueensViewModel @Inject constructor(
         timerJob = viewModelScope.launch(dispatcher) {
             while(true) {
                 delay(1000)
-                _gameState.update {
+                _playState.update {
                     it.copy(
                         playingMillis = it.playingMillis + 1000,
                         prevMillis = 0
@@ -913,8 +959,8 @@ class NQueensViewModel @Inject constructor(
 
     private fun updateBestTime() {
         var prevMillis = 0L
-        gameState.value.bestTimes.times[boardState.value.size]?.let {
-            if (gameState.value.playingMillis >= it) {
+        playState.value.bestTimes.times[boardState.value.size]?.let {
+            if (playState.value.playingMillis >= it) {
                 return
             }
 
@@ -922,17 +968,17 @@ class NQueensViewModel @Inject constructor(
         }
 
         viewModelScope.launch(dispatcher) {
-            val bestTimes = gameState.value.bestTimes
+            val bestTimes = playState.value.bestTimes
             appDataStore.setBestTimes(
                 bestTimes.copy(
                     times = bestTimes.times.toMutableMap().apply {
-                        this[boardState.value.size] = gameState.value.playingMillis
+                        this[boardState.value.size] = playState.value.playingMillis
                     }
                 )
             )
         }
 
-        _gameState.update {
+        _playState.update {
             it.copy(
                 prevMillis = prevMillis
             )
@@ -942,7 +988,7 @@ class NQueensViewModel @Inject constructor(
     private fun stopTimer() {
         timerJob?.cancel()
 
-        _gameState.update {
+        _playState.update {
             it.copy(playing = false)
         }
     }
@@ -964,7 +1010,7 @@ class NQueensViewModel @Inject constructor(
 
         viewModelScope.launch(dispatcher) {
             appDataStore.bestTimes.collect { times ->
-                _gameState.update {
+                _playState.update {
                     it.copy(bestTimes = times)
                 }
             }
@@ -981,19 +1027,5 @@ class NQueensViewModel @Inject constructor(
         const val FIREWORK_FADE_DURATION = 500L
         const val MAX_SQUARE_SIZE = 80
         const val VELOCITY = 500/1200f // 500 millis per 1200 pixels
-
-        fun updateSize(size: Int): BoardState {
-            return BoardState(
-                size = size,
-                queens = List(size) { NQueen(index = it) },
-                availableQueens = size,
-                board = Board(Array(size) { row ->
-                    Array(size) { col ->
-                        Square(row = row, col = col, light = Square.isLight(row, col))
-                    }
-                }),
-                paths = Paths.getPaths(size)
-            )
-        }
     }
 }
